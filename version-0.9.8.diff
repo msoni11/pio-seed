@@ -1,0 +1,3600 @@
+Index: build.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/db.json	(revision 3dde06915d1e19b05bba1df22ff330d67278dc29)
++++ seed-ui/db.json	(revision f96305d4d06931b682b1ce197d13d2e345e82260)
+@@ -23,28 +23,28 @@
+       "name": "mock-Host 1",
+       "status": "yellow",
+       "model": "VMware Virtual Platform",
+-      "vms" : ["vm1-host1",  "vm2-host1"]
++      "vms" : ["vm-10", "vm-11", "vm-12"]
+     },
+     {
+       "id": 2,
+       "name": "mock-Host 2",
+       "status": "green",
+       "model": "VMware Virtual Platform",
+-      "vms" : ["vm1-host2",  "vm2-host2",  "vm3-host2"]
++      "vms" : ["vm-20", "vm-21", "vm-22"]
+     },
+     {
+       "id": 3,
+       "name": "mock-Host 3",
+       "status": "red",
+       "model": "VMware Virtual Platform",
+-      "vms" : ["vm1-host3",  "vm2-host3"]
++      "vms" : ["vm-30", "vm-31"]
+     },
+     {
+       "id": 4,
+       "name": "mock-Host 4",
+       "status": "red",
+       "model": "VMware Virtual Platform",
+-      "vms" : ["vm1-host4",  "vm2-host4",  "vm3-host4", "vm4-host4"]
++      "vms" : ["vm-41", "vm-42", "vm-43", "vm-44"]
+     },
+     {
+       "id": 5,
+Index: seed-ui/README.md
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/README.md	(revision 54dbe7531d6d72b67419e1991f0524ee7f3bc06a)
++++ seed-ui/README.md	(revision b2a850f3729ece3c96c12a60ec38f746696cfec9)
+@@ -15,10 +15,12 @@
+ - Install node.js version 6.9 or higher (https://nodejs.org/en/)
+ - Install Angular-CLI by following [these instructions](https://github.com/angular/angular-cli#installation).
+ - Install [json-server](https://github.com/typicode/json-server) globally with `npm install -g json-server`
++- Install Yarn (https://yarnpkg.com/en/docs/install)
+ 
+ ```bash
+ # install the project's dependencies
+-npm install
++yarn 
++(or npm install)
+ 
+ # start json-server to get mock data and load local message bundles
+ npm run json-server
+@@ -40,9 +42,12 @@
+ # running unit tests with coverage => output in coverage/index.html
+ ng test --code-coverage
+ 
+-# running e2e tests
++# running e2e tests in Dev mode
+ ng e2e
+ 
++# running e2e tests in Plugin mode
++ng e2e --config e2e/protractor-plugin.config.js --serve false
++
+ # dev build
+ ng build
+ 
+Index: seed-ui/gulpfile.js
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/gulpfile.js	(revision 3e00459bba122f697c78ed8381937c813b017594)
++++ seed-ui/gulpfile.js	(revision 13ca5dc8d20a2f7a04b3794312da32ceccf09a8e)
+@@ -20,12 +20,12 @@
+ const PLUGIN_NAME = "__pluginName__";
+ const UI_BUNDLE_NAME = "__projectName-ui__";
+ 
+-var getVirgoWorkDeployerDir = _.memoize(_.partial(getDevServerPath, 'server/work/deployer/s/global'));
++var isWindows = /^win/.test(process.platform);
++var getVirgoWorkDeployerDir = _.memoize(_.partial(getDevServerPath, 'server/work/deployer/s'));
+ var getVirgoPickupDir = _.memoize(_.partial(getDevServerPath, 'server/pickup'));
+ var getServerPluginPackagesDir = _.memoize(_.partial(getDevServerPath, 'plugin-packages'));
+ var getServerPluginPackagesPluginsDir = _.memoize(_.partial(getDevServerPath, `plugin-packages/${PLUGIN_NAME}/plugins`));
+ 
+-
+ gulp.task('watch', function() {
+    const uiWarFolder = getDeployedArtifactPath(UI_BUNDLE_NAME);
+    if (!uiWarFolder) {
+@@ -36,10 +36,17 @@
+    console.log("Watching for UI changes and copying files directly to folder = " + uiWarFolder);
+    console.log("*** This may need to be restarted if the Virgo server is restarted ***");
+ 
+-   const ng = spawn('ng', ['build', '--watch', '--output-path', uiWarFolder ]);
++   // Spawn a child process with the Angular-CLI ng build in watch mode and output to Virgo's cache
++   // Windows requires "ng.cmd" as command name, instead of "ng" used on command line.
++   const ngCmd = isWindows ? 'ng.cmd' : 'ng';
++   const ng = spawn(ngCmd, ['build', '--watch', '--output-path', uiWarFolder ]);
+    ng.stdout.on('data', (data) => {
+       console.log(`UI build updated on ${new Date()}: \n${data}`);
+    });
++   if (isWindows) {
++      // This generates extra logs and makes the ng process work better on Windows
++      ng.stderr.on('data', (data) => { console.log(`${data}`); });
++   }
+ 
+    gulp.watch('src/assets/**/*', function(event) {
+       console.log('Detected assets changes in: ', event.path);
+@@ -93,9 +100,9 @@
+ function getDeployedArtifactPath(artifact) {
+    var result = null;
+    try {
+-      walk.sync(getVirgoWorkDeployerDir(), { max_depth: 3 }, function(dir) {
++      walk.sync(getVirgoWorkDeployerDir(), { max_depth: 4 }, function(dir) {
+          var warName = path.basename(dir).replace(/\.[wj]ar$/, '');
+-         if (artifact === warName) {
++         if (artifact === warName  && fs.lstatSync(dir).isDirectory()) {
+             result = dir;
+          }
+       });
+Index: seed-ui/package.json
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/package.json	(revision 3dde06915d1e19b05bba1df22ff330d67278dc29)
++++ seed-ui/package.json	(revision b1f757c24e7beca417c09c64af2c96885c668856)
+@@ -7,6 +7,7 @@
+     "ng": "ng",
+     "_start_comment": "=> PORT 4201 is used in webPlatformStub.ts getRootPath()",
+     "start": "ng serve  --port 4201 --proxy-config proxy.conf.json",
++    "start-aot": "ng serve --aot --port 4201 --proxy-config proxy.conf.json",
+     "build": "ng build",
+     "test": "ng test",
+     "lint": "ng lint",
+@@ -19,32 +20,33 @@
+     "npm": ">= 3.0.0"
+   },
+   "dependencies": {
+-    "@angular/animations": "^4.1.3",
+-    "@angular/common": "^4.1.3",
+-    "@angular/compiler": "^4.1.3",
+-    "@angular/core": "^4.1.3",
+-    "@angular/forms": "^4.1.3",
+-    "@angular/http": "^4.1.3",
+-    "@angular/platform-browser": "^4.1.3",
+-    "@angular/platform-browser-dynamic": "^4.1.3",
+-    "@angular/router": "^4.1.3",
+-    "@angular/tsc-wrapped": "^4.1.3",
++    "@angular/animations": "^4.2.6",
++    "@angular/common": "^4.2.6",
++    "@angular/compiler": "^4.2.6",
++    "@angular/core": "^4.2.6",
++    "@angular/forms": "^4.2.6",
++    "@angular/http": "^4.2.6",
++    "@angular/platform-browser": "^4.2.6",
++    "@angular/platform-browser-dynamic": "^4.2.6",
++    "@angular/router": "^4.2.6",
++    "@angular/tsc-wrapped": "^4.2.6",
+     "@webcomponents/custom-elements": "1.0.0",
+     "angular-in-memory-web-api": "0.3.2",
+-    "clarity-angular": "0.9.7",
+-    "clarity-icons": "0.9.7",
+-    "clarity-ui": "0.9.7",
++    "clarity-angular": "^0.9.16",
++    "clarity-icons": "^0.9.16",
++    "clarity-ui": "^0.9.16",
+     "core-js": "^2.4.1",
+     "mutationobserver-shim": "^0.3.2",
+     "rxjs": "^5.4.0",
+     "web-animations-js": "^2.2.5",
+-    "zone.js": "^0.8.11"
++    "zone.js": "0.8.12"
+   },
+   "devDependencies": {
+-    "@angular/cli": "^1.0.6",
+-    "@angular/compiler-cli": "^4.1.3",
++    "@angular/cli": "^1.2.7",
++    "@angular/compiler-cli": "^4.2.6",
+     "@types/core-js": "^0.9.41",
+     "@types/jasmine": "^2.5.47",
++    "@types/jasminewd2": "^2.0.2",
+     "@types/node": "~7.0.22",
+     "bootstrap": "4.0.0-alpha.5",
+     "codelyzer": "~3.0.1",
+@@ -56,17 +58,16 @@
+     "jasmine-core": "~2.6.2",
+     "jasmine-spec-reporter": "~4.1.0",
+     "karma": "~1.7.0",
++    "karma-chrome-launcher": "~2.1.1",
+     "karma-cli": "~1.0.1",
+     "karma-coverage-istanbul-reporter": "^1.3.0",
+     "karma-jasmine": "~1.1.0",
+     "karma-jasmine-html-reporter": "^0.2.2",
+     "karma-mocha-reporter": "^2.2.3",
+-    "karma-chrome-launcher": "~2.1.1",
+-    "karma-phantomjs-launcher": "^1.0.4",
+     "protractor": "~5.1.2",
+     "ts-node": "~3.0.4",
+-    "tslint": "~5.3.2",
+-    "typescript": "2.2.2",
++    "tslint": "~5.2.0",
++    "typescript": "2.3.4",
+     "typings": "^2.1.1",
+     "underscore": "^1.8.3",
+     "walkdir": "0.0.11",
+Index: seed-ui/karma.conf.js
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/karma.conf.js	(revision 5830289519f2224128069735e8451eb1205cc4e1)
++++ seed-ui/karma.conf.js	(revision b7ad480e006fa7e311f114bba2c7a2266bf64c79)
+@@ -8,7 +8,6 @@
+       plugins: [
+          require('karma-jasmine'),
+          require('karma-chrome-launcher'),
+-         require('karma-phantomjs-launcher'),
+          require('karma-mocha-reporter'),
+          require('karma-jasmine-html-reporter'),
+          require('karma-coverage-istanbul-reporter'),
+Index: seed-ui/src/styles.css
+===================================================================
+--- seed-ui/src/styles.css	(revision f96305d4d06931b682b1ce197d13d2e345e82260)
++++ seed-ui/src/styles.css	(revision f96305d4d06931b682b1ce197d13d2e345e82260)
+@@ -1,10 +0,0 @@
+-/* You can add global styles to this file, and also import other style files */
+-
+-/* Overide 2 styles in order to adjust wizard (size lg) inside the plugin dialog */
+-.modal {
+-    padding: 0px;
+-}
+-
+-.clr-wizard.wizard-lg .content-container {
+-    height: 576px;
+-}
+Index: seed-ui/src/styles.scss
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/styles.scss	(revision b7ad480e006fa7e311f114bba2c7a2266bf64c79)
++++ seed-ui/src/styles.scss	(revision b7ad480e006fa7e311f114bba2c7a2266bf64c79)
+@@ -0,0 +1,35 @@
++/* You can add global styles to this file, and also import other style files */
++
++/* Overide 2 styles in order to adjust wizard (size lg) inside the plugin dialog */
++.modal {
++    padding: 0px;
++}
++
++.clr-wizard.wizard-lg .content-container {
++    height: 576px;
++}
++
++// Shared style to display sidenav correctly
++.td-sidenav {
++    vertical-align: top;
++    padding: 0px;
++    background-color: #CFD8DC
++}
++
++// Overrides Clarity stack-header style to remove the top margin
++.stack-header {
++    margin-top: 0px;
++}
++
++// Shared style to display subnav correctly
++.td-subnav {
++    vertical-align: top;
++    width: 100%;
++    padding: 0px;
++}
++
++// Lower opacity for dev-ui only elements
++.dev-ui {
++    padding-top: 20px;
++    opacity: 0.6;
++}
+Index: seed-ui/src/polyfills.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/polyfills.ts	(revision 5830289519f2224128069735e8451eb1205cc4e1)
++++ seed-ui/src/polyfills.ts	(revision 7f7c8df4c62d72db5545e066b807709d8a85fbfb)
+@@ -49,7 +49,7 @@
+ // import 'web-animations-js';  // Run `npm install --save web-animations-js`.
+ 
+ /** Required by PhantomJS for unit testing **/
+-import '@webcomponents/custom-elements/custom-elements.min.js';
++// import '@webcomponents/custom-elements/custom-elements.min.js';
+ 
+ /***************************************************************************************************
+  * Zone JS is required by Angular itself.
+Index: tools/generate-plugin.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- tools/generate-plugin.xml	(revision 27f77a84115f56bdcddf8fef9d42373e1c82ab73)
++++ tools/generate-plugin.xml	(revision 3dde06915d1e19b05bba1df22ff330d67278dc29)
+@@ -14,10 +14,13 @@
+        - pluginServTemplateDir: full path to the seed-service directory
+    </description>
+ 
+-   <target name="build" depends="copyAndFilter-ui, copyAndFilter-service"/>
++   <target name="build" depends="copyAndFilter-ui, copyAndFilter-service, mac-extra"/>
+ 
+    <!-- UI plugin project -->
+    <target name="copyAndFilter-ui">
++      <condition property="isMac">
++         <os family="mac" />
++      </condition>
+       <copy todir="${projectDir-ui}">
+          <fileset dir="${pluginUiTemplateDir}"
+                 excludes="node_modules/**,dist/**,coverage/**,target/**,**/*.swf,documentation/**,yarn.lock"/>
+@@ -64,4 +67,24 @@
+          <fileset dir="${projectDir-service}/src/main/java/__packageName__"/>
+       </move>
+    </target>
++
++   <!-- on Mac OS only: make .sh scripts executable -->
++   <target name="mac-extra" if="isMac">
++      <exec executable="chmod" dir="${projectDir-ui}/tools">
++         <arg value="+x"></arg>
++         <arg value="build-plugin-no-java.sh"></arg>
++         <arg value="build-plugin-package.sh"></arg>
++         <arg value="build-plugin-with-proxy.sh"></arg>
++         <arg value="build-war.sh"></arg>
++         <arg value="convert-properties.sh"></arg>
++         <arg value="deploy-war.sh"></arg>
++         <arg value="remove-chassis-code.sh"></arg>
++     </exec>
++     <exec executable="chmod" dir="${projectDir-service}/tools">
++         <arg value="+x"></arg>
++         <arg value="build-java.sh"></arg>
++         <arg value="deploy-jar.sh"></arg>
++         <arg value="remove-chassis-code.sh"></arg>
++     </exec>
++   </target>
+ </project>
+\ No newline at end of file
+Index: seed-ui/.angular-cli.json
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/.angular-cli.json	(revision f96305d4d06931b682b1ce197d13d2e345e82260)
++++ seed-ui/.angular-cli.json	(revision b2a850f3729ece3c96c12a60ec38f746696cfec9)
+@@ -23,7 +23,7 @@
+             "styles": [
+                 "../node_modules/clarity-icons/clarity-icons.min.css",
+                 "../node_modules/clarity-ui/clarity-ui.min.css",
+-                "styles.css"
++                "styles.scss"
+             ],
+             "scripts": [
+                 "../node_modules/clarity-icons/clarity-icons.min.js"
+@@ -39,7 +39,7 @@
+     "packages": [],
+     "e2e": {
+         "protractor": {
+-            "config": "./protractor.config.js"
++            "config": "./e2e/protractor-dev.config.js"
+         }
+     },
+     "lint": [
+@@ -59,7 +59,7 @@
+         }
+     },
+     "defaults": {
+-        "styleExt": "css",
++        "styleExt": "scss",
+         "component": {
+             "inlineTemplate": false,
+             "spec": true
+Index: seed-ui/e2e/dev/app.po.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/e2e/dev/app.po.ts	(revision b2a850f3729ece3c96c12a60ec38f746696cfec9)
++++ seed-ui/e2e/dev/app.po.ts	(revision b2a850f3729ece3c96c12a60ec38f746696cfec9)
+@@ -0,0 +1,49 @@
++import { browser, element, by } from 'protractor';
++
++export class UiPluginPage {
++   navigateTo() {
++      return browser.get('/');
++   }
++
++   getHeaderTitle() {
++      return element(by.css('my-app header .branding')).getText();
++   }
++
++   getTabFirstParagraph() {
++      return element.all(by.css('clr-tab-content p')).first().getText();
++   }
++
++   getContentFirstParagraph() {
++      return element.all(by.css('.content-area p')).first().getText();
++   }
++
++   getButtonByText(text) {
++      return element(by.buttonText(text));
++   }
++
++   getLinkByText(text) {
++      return element(by.linkText(text));
++   }
++
++   getOpenModalElement() {
++      return element(by.css('.modal-dialog'));
++   }
++
++   getOpenModalTitle() {
++      return element(by.css('.modal-dialog .modal-title')).getText();
++   }
++
++   getFirstBtnLink() {
++      return element.all(by.css('clr-tab-content .btn-link')).first();
++   }
++
++   doubleClickFirstRow() {
++      // let row1 = element.all(by.css('.content-area .row')).get(1).getWebElement().getText();
++      // console.log("*** " + row1);
++      // element.all(by.css('.content-area .row')).get(1).doubleClick();
++      element.all(by.css('.content-area .row')).then(function(items) {
++         // console.log("*** " + items[1].getWebElement().getText());
++         browser.actions().doubleClick(items[1]).perform();
++      });
++   }
++}
+Index: seed-ui/e2e/helpers/util.js
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/e2e/helpers/util.js	(revision b2a850f3729ece3c96c12a60ec38f746696cfec9)
++++ seed-ui/e2e/helpers/util.js	(revision b2a850f3729ece3c96c12a60ec38f746696cfec9)
+@@ -0,0 +1,90 @@
++const logger = require('./logger');
++const request = require('request');
++
++// Base url for a local vSphere Client
++const BASE_URL = "https://localhost:9443/ui/";
++
++const DEFAULT_WAIT_TIME_MILLISECONDS = 4000;
++
++module.exports = {
++   addCookieToRequest: addCookieToRequest,
++   addSessionToRequest: addSessionToRequest,
++   getBaseUrl: getBaseUrl,
++   initSession: initSession,
++   waitForPresenceOf: waitForPresenceOf,
++   waitForElementToBeClickable: waitForElementToBeClickable,
++   waitForAndClick: waitForAndClick
++};
++
++function getBaseUrl() {
++   return BASE_URL;
++}
++
++function addCookieToRequest() {
++   return browser.driver.manage().getCookies().then(function(cookies) {
++      var xsrfToken;
++      var cookieJar = request.jar();
++
++      for (var i in cookies) {
++         var cookie = request.cookie(cookies[i].name + '=' + cookies[i].value);
++         cookieJar.setCookie(cookie, browser.baseUrl);
++         if (cookies[i].name === 'VSPHERE-UI-XSRF-TOKEN') {
++            xsrfToken = cookies[i].value;
++         }
++      }
++
++      return request.defaults({
++         rejectUnauthorized: false,
++         jar: cookieJar,
++         headers: { 'X-VSPHERE-UI-XSRF-TOKEN': xsrfToken }
++      });
++   });
++}
++
++function addSessionToRequest(request) {
++   var deferred = protractor.promise.defer();
++   request.get(browser.baseUrl + 'usersession', function(error, response, body) {
++      return deferred.fulfill(request.defaults({
++         qs: { webClientSessionId: JSON.parse(body).clientId }
++      }));
++   });
++   return deferred.promise;
++}
++
++function initSession() {
++   return addCookieToRequest()
++               .then(addSessionToRequest);
++}
++
++function waitForAndClick (element, element_name) {
++   return waitForElementToBeClickable(element).then(function() {
++      return browser.actions().click(element).perform().then(function() {
++         retrieveElementName(element, element_name).then(function(element_name) {
++            logger.action("Clicking '" + element_name + "'");
++         });
++      });
++   });
++}
++
++function waitForElementToBeClickable (element) {
++   var EC = protractor.ExpectedConditions;
++   return browser.wait(EC.elementToBeClickable(element), DEFAULT_WAIT_TIME_MILLISECONDS);
++}
++
++function waitForPresenceOf (element) {
++   var EC = protractor.ExpectedConditions;
++   return browser.wait(EC.presenceOf(element), DEFAULT_WAIT_TIME_MILLISECONDS);
++}
++
++function retrieveElementName (element, element_name) {
++   var defer = protractor.promise.defer();
++
++   if (element_name === undefined) {
++      defer.fulfill(element.getText());
++   } else {
++      defer.fulfill(element_name);
++   }
++
++   return defer;
++}
++
+Index: seed-ui/tools/build-war.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/tools/build-war.xml	(revision b2a850f3729ece3c96c12a60ec38f746696cfec9)
++++ seed-ui/tools/build-war.xml	(revision b1f757c24e7beca417c09c64af2c96885c668856)
+@@ -77,29 +77,34 @@
+       </condition>
+    </target>
+ 
+-   <!-- normal build -->
++   <!-- Normal dev build -->
+    <target name="ng-build" depends="build-mac, build-windows"></target>
+ 
+    <target name="build-mac" if="isMac">
+       <exec executable="ng">
+          <arg value="build"/>
++         <arg value="--output-path"/>
++         <arg value="../dist"/>
+       </exec>
+    </target>
+ 
+    <target name="build-windows" if="isWindows">
+       <exec executable="ng.cmd">
+          <arg value="build"/>
++         <arg value="--output-path"/>
++         <arg value="../dist"/>
+       </exec>
+    </target>
+ 
+-   <!-- production build, including the AOT option required to lazy loaded modules -->
++   <!-- Production build (the -prod flag will automatic turn on AOT) -->
+    <target name="ng-build-prod" depends="build-prod-mac, build-prod-windows"></target>
+ 
+    <target name="build-prod-mac" if="isMac">
+       <exec executable="ng">
+          <arg value="build"/>
+          <arg value="--prod"/>
+-         <arg value="--aot"/>
++         <arg value="--output-path"/>
++         <arg value="../dist"/>
+       </exec>
+    </target>
+ 
+@@ -107,7 +112,8 @@
+       <exec executable="ng.cmd">
+          <arg value="build"/>
+          <arg value="--prod"/>
+-         <arg value="--aot"/>
++         <arg value="--output-path"/>
++         <arg value="../dist"/>
+       </exec>
+    </target>
+ 
+@@ -208,6 +214,13 @@
+       <copy todir="${VSPHERE_SDK_HOME}/vsphere-ui/server/pickup/"
+             file="${BUILD_DIR}/${WAR_NAME}">
+       </copy>
++      <echo>**** NOTE ****
++         For SDK 6.5u1 or newer the hot deployment of bundles in in server/pickup only works
++         if you have set the flag pickup.deployer=true in webclient.properties located in:
++         Windows => C:\ProgramData\VMware\vCenterServer\cfg\vsphere-client\
++         Mac OS  => /var/lib/vmware/vsphere-client/vsphere-client/
++         and if you have added attribute scope="global" to plugin-package.xml.
++      </echo>
+    </target>
+ </project>
+ 
+Index: seed-ui/e2e/helpers/login.js
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/e2e/helpers/login.js	(revision b2a850f3729ece3c96c12a60ec38f746696cfec9)
++++ seed-ui/e2e/helpers/login.js	(revision b2a850f3729ece3c96c12a60ec38f746696cfec9)
+@@ -0,0 +1,65 @@
++'use strict';
++
++const logger = require('./logger');
++
++const selectors = {
++   username() {
++      return element(by.id('username'));
++   },
++   password() {
++      return element(by.id('password'));
++   },
++   loginButton() {
++      return element(by.id('submit'));
++   }
++};
++
++const start = (username, password) => {
++   browser.ignoreSynchronization = true;
++   var EC = protractor.ExpectedConditions;
++
++   return browser.get(browser.baseUrl)
++      .then(() => {
++         logger.info('Waiting for login input to be clickable');
++         return browser.wait(EC.elementToBeClickable(element(by.id('username')), 5000));
++      })
++      .then(() => {
++         logger.action('Clearing username field');
++         return selectors.username().clear();
++      })
++      .then(() => {
++         logger.action('Clearing password field');
++         return selectors.password().clear();
++      })
++      .then(() => {
++         logger.action('Setting username field');
++         return selectors.username().sendKeys(username || browser.params.login.username);
++      })
++      .then(() => {
++         logger.action('Setting password field');
++         return selectors.password().sendKeys(password || browser.params.login.password);
++      })
++      .then(() => {
++         logger.info('Waiting for login button to be clickable');
++         return browser.wait(EC.elementToBeClickable(selectors.loginButton(), 5000));
++      })
++      .then(() => {
++         logger.action('Clicking login button');
++         return selectors.loginButton().click();
++      })
++      .then(() => {
++         logger.info('Waiting for page to load');
++         return browser.wait(EC.presenceOf(element(by.id('homeBurgerMenu')), 5000));
++      })
++      .then(() => {
++         logger.done("Logged in");
++      })
++      .catch(err => {
++         console.error('Error encountered during login', err);
++      });
++}
++
++module.exports = {
++   selectors,
++   start
++};
+\ No newline at end of file
+Index: seed-ui/src/app/app.module.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/app.module.ts	(revision 3dde06915d1e19b05bba1df22ff330d67278dc29)
++++ seed-ui/src/app/app.module.ts	(revision b7ad480e006fa7e311f114bba2c7a2266bf64c79)
+@@ -22,7 +22,7 @@
+ 
+ // [removable-chassis-code]
+ import { ChassisService } from "./services/chassis/chassis.service";
+-import { InMemoryWebApiModule } from "angular-in-memory-web-api";
++import { InMemoryWebApiModule, InMemoryBackendConfigArgs } from "angular-in-memory-web-api";
+ import { InMemoryDataService } from "./services/chassis/in-memory-data.service";
+ // [end-chassis-code]
+ import { UserSettingService } from "app/shared/user-settings.service";
+@@ -39,7 +39,10 @@
+       SharedModule,
+       // [removable-chassis-code]
+       // InMemoryDataService config: forward unrecognized requests + remove the default 500ms delay
+-      InMemoryWebApiModule.forRoot(InMemoryDataService, { passThruUnknownUrl: true, delay: 0 })
++      InMemoryWebApiModule.forRoot(InMemoryDataService, <InMemoryBackendConfigArgs>{
++         passThruUnknownUrl: true,
++         delay: 0
++      })
+       // [end-chassis-code]
+    ],
+    declarations: [
+@@ -54,6 +57,7 @@
+       AppErrorHandler,
+       ChassisService, // [removable-chassis-line]
+       EchoService,
++      {provide: ErrorHandler, useClass: AppErrorHandler},
+       Globals,
+       GlobalsService,
+       HostService,
+@@ -61,7 +65,7 @@
+       NavService,
+       RefreshService,
+       UserSettingService,
+-      {provide: ErrorHandler, useClass: AppErrorHandler}],
++      ],
+    bootstrap: [AppComponent]
+ })
+ 
+Index: seed-ui/e2e/helpers/logger.js
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/e2e/helpers/logger.js	(revision b2a850f3729ece3c96c12a60ec38f746696cfec9)
++++ seed-ui/e2e/helpers/logger.js	(revision b2a850f3729ece3c96c12a60ec38f746696cfec9)
+@@ -0,0 +1,16 @@
++'use strict';
++
++module.exports =  {
++   start(msg) {
++      console.log('\n\x1b[1m\x1b[35m ** %s\x1b[1m\x1b[0m\x1b[0m', msg);
++   },
++   done(msg) {
++      console.log('\x1b[33m || %s\x1b[0m\n', msg);
++   },
++   action(msg) {
++      console.log('\x1b[36m   -> action: \x1b[33m%s\x1b[0m', msg);
++   },
++   info(msg) {
++      console.log('\x1b[36m   %s\x1b[1m\x1b[0m\x1b[0m', msg);
++   }
++};
+\ No newline at end of file
+Index: seed-ui/src/tsconfig.spec.json
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/tsconfig.spec.json	(revision 7f7c8df4c62d72db5545e066b807709d8a85fbfb)
++++ seed-ui/src/tsconfig.spec.json	(revision b7ad480e006fa7e311f114bba2c7a2266bf64c79)
+@@ -7,6 +7,7 @@
+     "baseUrl": "",
+     "types": [
+       "jasmine",
++      "jasminewd2",
+       "node"
+     ]
+   },
+Index: seed-ui/e2e/dev/app.e2e-spec.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/e2e/dev/app.e2e-spec.ts	(revision b2a850f3729ece3c96c12a60ec38f746696cfec9)
++++ seed-ui/e2e/dev/app.e2e-spec.ts	(revision b2a850f3729ece3c96c12a60ec38f746696cfec9)
+@@ -0,0 +1,42 @@
++import { UiPluginPage } from './app.po';
++import { browser, element, by } from "protractor";
++
++// End to end tests in Dev mode.
++// - You must have "npm run json-server" already running in another console.
++// - Start the tests with this command:
++//    ng 2e2
++
++describe('Test in Dev mode', () => {
++   let page: UiPluginPage;
++   const expectedTitle = '__pluginName__ (dev mode)';
++
++   beforeEach(() => {
++      page = new UiPluginPage();
++   });
++
++   it('should have the title: ' + expectedTitle, () => {
++      page.navigateTo();
++      expect<any>(page.getHeaderTitle()).toEqual(expectedTitle);
++   });
++
++   it('should start with the home page tag', () => {
++      page.navigateTo();
++      expect<any>(page.getTabFirstParagraph()).toEqual('Add your main view content here.');
++   });
++
++   it('should open a popup in the EchoService tab', () => {
++      page.navigateTo();
++      page.getButtonByText("Echo Service").click();
++      element(by.id('helloBtn1')).click();
++      expect<any>(page.getOpenModalElement()).toBeTruthy();
++      expect<any>(page.getOpenModalTitle()).toBe("Echo Response");
++   });
++
++   it('should navigate to the Settings page after button click', () => {
++      page.navigateTo();
++      page.getButtonByText("Home").click();
++      page.getFirstBtnLink().click();
++      browser.waitForAngular();
++      expect<any>(page.getContentFirstParagraph()).toEqual('Add your settings content here.');
++   });
++});
+Index: seed-ui/e2e/plugin/plugin.po.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/e2e/plugin/plugin.po.ts	(revision b2a850f3729ece3c96c12a60ec38f746696cfec9)
++++ seed-ui/e2e/plugin/plugin.po.ts	(revision b2a850f3729ece3c96c12a60ec38f746696cfec9)
+@@ -0,0 +1,49 @@
++import { browser, element, by } from 'protractor';
++
++const logger = require('../helpers/logger');
++
++export class VsphereClient {
++   navigateToShortcuts() {
++      logger.action("Navigating to shortcuts page");
++      return browser.get(browser.baseUrl + "?extensionId=vsphere.core.controlcenter.domainView#?" +
++            "extensionId=vsphere.core.controlcenter.domainView");
++   }
++}
++export class UiPluginPage {
++   navigateTo() {
++      return browser.get('/');
++   }
++
++   getHeaderTitle() {
++      return element(by.css('my-app header .branding')).getText();
++   }
++
++   getTabFirstParagraph() {
++      return element.all(by.css('clr-tab-content p')).first().getText();
++   }
++
++   getContentFirstParagraph() {
++      return element.all(by.css('.content-area p')).first().getText();
++   }
++
++   getButtonByText(text) {
++      return element(by.buttonText(text));
++   }
++
++   getLinkByText(text) {
++      return element(by.linkText(text));
++   }
++
++   getOpenModalElement() {
++      return element(by.css('.modal-dialog'));
++   }
++
++   getOpenModalTitle() {
++      return element(by.css('.modal-dialog .modal-title')).getText();
++   }
++
++   getFirstBtnLink() {
++      return element.all(by.css('clr-tab-content .btn-link')).first();
++   }
++
++}
+Index: seed-ui/src/app/app.component.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/app.component.ts	(revision f96305d4d06931b682b1ce197d13d2e345e82260)
++++ seed-ui/src/app/app.component.ts	(revision 13ca5dc8d20a2f7a04b3794312da32ceccf09a8e)
+@@ -1,4 +1,4 @@
+-import { Component, Injector, ViewEncapsulation, ChangeDetectorRef } from "@angular/core";
++import { Component, Injector, ChangeDetectorRef } from "@angular/core";
+ 
+ import { GlobalsService, RefreshService, I18nService }   from "./shared/index";
+ import { ActionDevService } from "./services/testing/action-dev.service";
+@@ -7,8 +7,7 @@
+    selector: "my-app",
+    styleUrls: ["./app.component.scss"],
+    templateUrl: "./app.component.html",
+-   providers: [ ],
+-   encapsulation: ViewEncapsulation.None
++   providers: [ ]
+ })
+ export class AppComponent {
+ 
+@@ -36,9 +35,7 @@
+       this.refreshService.refreshView();
+ 
+       if (this.gs.isPluginMode()) {
+-         // This helps refresh the app's children components in Plugin mode after refreshView,
+-         // but this is not enough for asynchronous code => see how detectChanges() is also called
+-         // in data functions in monitor.component.ts, main.component.ts, etc.
++         // This helps refresh the app's children components in Plugin mode after refreshView
+          this.changeDetector.detectChanges();
+       }
+    }
+Index: seed-ui/tools/plugin-package.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/tools/plugin-package.xml	(revision 8e82f12995b72e3230ae1aad09f08509fdc57a7a)
++++ seed-ui/tools/plugin-package.xml	(revision 414079d68b51ed8a1e94876faed3f7628cecd654)
+@@ -12,12 +12,9 @@
+    version: should match the vCenter extension version
+    type: keep "html" for this plugin to be deployed in the vSphere HTML client.
+    name: short name displayed in the Administration < Client plugins view
+-   scope: "global" means to deploy this plugin with individual bundles in server/pickup for dev mode
+ -->
+ <pluginPackage id="__packageName__" version="1.0.0" type="html" name="__pluginName__"
+-               description="Add plugin description" vendor="Add vendor"
+-
+-               scope="global">  <!-- REMOVE scope="global" FOR PRODUCTION! -->
++               description="Add plugin description" vendor="Add vendor">
+ 
+    <dependencies>
+       <!--
+Index: seed-ui/src/app/testing/index.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/testing/index.ts	(revision 5830289519f2224128069735e8451eb1205cc4e1)
++++ seed-ui/src/app/testing/index.ts	(revision 7f7c8df4c62d72db5545e066b807709d8a85fbfb)
+@@ -27,17 +27,3 @@
+       return Promise.reject("error message from appErrorHandlerStub");
+    }
+ };
+-
+-// ---- Utilities copied from Angular2 doc ----
+-
+-/**
+- * Create custom DOM event the old fashioned way
+- *
+- * https://developer.mozilla.org/en-US/docs/Web/API/Event/initEvent
+- * Although officially deprecated, some browsers (phantom) dont accept the preferred "new Event(eventName)"
+- */
+-export function newEvent(eventName: string, bubbles = false, cancelable = false) {
+-   const evt = document.createEvent("CustomEvent");
+-   evt.initCustomEvent(eventName, bubbles, cancelable, null);
+-   return evt;
+-}
+Index: seed-ui/src/app/app.component.scss
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/app.component.scss	(revision f96305d4d06931b682b1ce197d13d2e345e82260)
++++ seed-ui/src/app/app.component.scss	(revision c7b4138fe3e52e41ff259b32bbe8018ee06a1812)
+@@ -1,22 +1,0 @@
+-// WARNING: these styles are shared with all child components because the flag
+-//          encapsulation: ViewEncapsulation.None is set in app.component.ts
+-
+-// Shared style to display sidenav correctly
+-.td-sidenav {
+-  vertical-align: top;
+-  padding: 0px;
+-  background-color: #CFD8DC
+-}
+-
+-// Shared style to display subnav correctly
+-.td-subnav {
+-  vertical-align: top;
+-  width: 100%;
+-  padding: 0px;
+-}
+-
+-// Lower opacity for dev-ui only elements
+-.dev-ui {
+-  padding-top: 20px;
+-  opacity: 0.6;
+-}
+Index: seed-ui/tools/remove-chassis-code.sh
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/tools/remove-chassis-code.sh	(revision 27f77a84115f56bdcddf8fef9d42373e1c82ab73)
++++ seed-ui/tools/remove-chassis-code.sh	(revision 3dde06915d1e19b05bba1df22ff330d67278dc29)
+@@ -1,8 +1,16 @@
+ #!/bin/sh
++# This script remove all chassis related code in the current plugin project
++# It must be run from the /tools directory
+ 
+-toolsDir=`dirname $0`
+-echo "Remove all chassis related code in this project? Y or N [N]"
+-read response
++if [[ $1 ]]; then
++    toolsDir=$1
++    echo "Removing all chassis related code in this project!"
++    response="y"
++else
++    toolsDir=`dirname $0`
++    echo "Remove all chassis related code in this project? Y or N [N]"
++    read response
++fi
+ if [[ $response == "y" || $response == "Y" ]]; then
+    # Remove chassis specific files
+    rm -rf $toolsDir/../src/app/services/chassis
+Index: seed-ui/protractor.config.js
+===================================================================
+--- seed-ui/protractor.config.js	(revision 386b4700411670cde8c643aad709ea68430ae21b)
++++ seed-ui/e2e/protractor-dev.config.js	(revision b2a850f3729ece3c96c12a60ec38f746696cfec9)
+@@ -7,7 +7,7 @@
+ exports.config = {
+    allScriptsTimeout: 11000,
+    specs: [
+-      './e2e/**/*.e2e-spec.ts'
++      './dev/**/*.e2e-spec.ts'
+    ],
+    capabilities: {
+       'browserName': 'chrome'
+Index: seed-ui/src/app/app-routing.module.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/app-routing.module.ts	(revision 3dde06915d1e19b05bba1df22ff330d67278dc29)
++++ seed-ui/src/app/app-routing.module.ts	(revision f96305d4d06931b682b1ce197d13d2e345e82260)
+@@ -49,7 +49,7 @@
+    { path: "chassis-summary/:id",   component: ChassisSummaryComponent },
+    { path: "chassis-monitor/:id",   component: NYIComponent },
+    { path: "chassis-manage/:id",    component: NYIComponent },
+-   { path: "edit-chassis/:id/:actionUid",   component: EditChassisComponent }
++   { path: "edit-chassis/:id/:actionUid",   component: EditChassisComponent },
+    // [end-chassis-code]
+ ];
+ 
+Index: seed-ui/e2e/plugin/plugin.e2e-spec.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/e2e/plugin/plugin.e2e-spec.ts	(revision b2a850f3729ece3c96c12a60ec38f746696cfec9)
++++ seed-ui/e2e/plugin/plugin.e2e-spec.ts	(revision b2a850f3729ece3c96c12a60ec38f746696cfec9)
+@@ -0,0 +1,51 @@
++import { browser, element, by } from "protractor";
++import { VsphereClient } from "./plugin.po";
++const logger = require("../helpers/logger");
++
++// End to end tests in plugin mode.
++// - Your local vSphere client must be already running with the plugin deployed
++// - Start the tests with this command:
++//    ng e2e --config e2e/protractor-plugin.config.js --serve false
++
++describe('Tests in plugin mode', () => {
++   let client: VsphereClient;
++
++   beforeEach(() => {
++      client = new VsphereClient();
++   });
++
++   it('finds __pluginName__ shortcut and opens its main view', () => {
++      client.navigateToShortcuts().then(() => {
++         // Find the div for "__pluginName__" shortcut
++         const pluginShortcut = element(by.xpath('//div[text()="__pluginName__"]'));
++         pluginShortcut.getText().then(name => {
++            logger.info("Found shortcut: " + name);
++            expect(name).toBe("__pluginName__");
++         });
++
++         browser.actions().click(pluginShortcut).perform().then(() => {
++            logger.action("Click __pluginName__ shortcut");
++            browser.sleep(4000);
++
++            // Check the view title
++            const viewTitle = element(by.css(".titlebar"));
++            viewTitle.getText().then(title => {
++               logger.info("Found view title: " + title);
++               expect(title).toContain("__pluginName__ Main View");
++            });
++
++            // Check the iframe content
++            const iframe = element(by.tagName("iframe")).getWebElement();
++            browser.switchTo().frame(iframe);
++
++            const mainView = element(by.tagName("main-view"));
++            mainView.getText().then(viewText => {
++               logger.info("Found mainView: " + viewText);
++               expect(viewText).toContain("Home");
++               expect(viewText).toContain("Echo Service");
++               expect(viewText).toContain("Chassis List");
++            });
++         });
++      });
++   });
++});
+Index: seed-ui/src/app/services/host.model.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/services/host.model.ts	(revision 3dde06915d1e19b05bba1df22ff330d67278dc29)
++++ seed-ui/src/app/services/host.model.ts	(revision 5830289519f2224128069735e8451eb1205cc4e1)
+@@ -9,24 +9,45 @@
+    status: string;
+    /** Type of host, from property "hardware.systemInfo.model" */
+    model: string;
+-   /** List of vm names or ids */
+-   vms: Array<string>;
++   /** List of vm ids */
++   vms: Array<string> = [];
++
++   constructor(id: string, name: string) {
++      this.id = id;
++      this.name = name;
++   }
+ 
+    /**
+     * Conversion between the vSphere property names and this model
+     * @param hostData
+     * @returns {Host}
+     */
+-   static convertProperties(hostData: any): Host {
+-      const host = new Host();
+-      host.id = hostData.id;
+-      host.name = hostData.name;
+-      host.status = hostData["overallStatus"];
+-      host.model = hostData["hardware.systemInfo.model"];
+-      // The hostData.vm property returned by the backend is an array of VM objects like
+-      // {value: "vm-158", type: "VirtualMachine", serverGuid: "8d88c879-6e53-4d70-a00b-9a725d121077"}
+-      // We only keep the values for now
+-      host.vms = hostData.vm ? hostData.vm.map(val => val.value) : [] ;
++   static convertProperties(hostData: any, useLiveData: boolean): Host {
++      const host = new Host(hostData.id, hostData.name);
++
++      if (useLiveData) {
++         host.status = hostData["overallStatus"];
++         host.model = hostData["hardware.systemInfo.model"];
++
++         // The hostData.vm property returned by the backend is an array of VM objects like
++         // {value: "vm-158", type: "VirtualMachine", serverGuid: "8d88c879-6e53-4d70-a00b-9a725d121077"}
++         // We only keep the values for now
++         host.vms = hostData.vm ? hostData.vm.map(val => val.value) : [] ;
++
++      } else {
++         // Case of mock data, no conversion necessary.
++         host.status = hostData["status"];
++         host.model = hostData["model"];
++         host.vms = hostData.vms;
++      }
+       return host
+    }
+ }
++
++/**
++ * An object for reporting errors while getting host data
++ */
++export class HostError {
++   constructor(public id: string, public error: string) {
++   }
++}
+Index: seed-ui/tools/plugin-proxy-package.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/tools/plugin-proxy-package.xml	(revision 8e82f12995b72e3230ae1aad09f08509fdc57a7a)
++++ seed-ui/tools/plugin-proxy-package.xml	(revision 414079d68b51ed8a1e94876faed3f7628cecd654)
+@@ -12,12 +12,9 @@
+    version: should match the vCenter extension version
+    type: keep "html" for this plugin to be deployed in the vSphere HTML client.
+    name: short name displayed in the Administration < Client plugins view
+-   scope: "global" means to deploy this plugin with individual bundles in server/pickup for dev mode
+ -->
+ <pluginPackage id="__packageName__" version="1.0.0" type="html" name="__pluginName__"
+-               description="Add plugin description" vendor="Add vendor"
+-
+-               scope="global">  <!-- REMOVE scope="global" FOR PRODUCTION! -->
++               description="Add plugin description" vendor="Add vendor">
+ 
+    <dependencies>
+       <!--
+Index: seed-ui/src/assets/css/plugin-icons.css
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/assets/css/plugin-icons.css	(revision 27f77a84115f56bdcddf8fef9d42373e1c82ab73)
++++ seed-ui/src/assets/css/plugin-icons.css	(revision 3dde06915d1e19b05bba1df22ff330d67278dc29)
+@@ -16,7 +16,7 @@
+  * Follow the SDK doc or other samples for the correct attributes based on the type of icon.
+  */
+ .__bundleName__-pluginIcon {
+-    background: url("../images/plugin.png");
++    background: url("../images/pluginIcon.png");
+     width: 32px;
+     height: 32px;
+     display: inline-block;
+Index: seed-ui/tools/plugin-nojava-package.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/tools/plugin-nojava-package.xml	(revision 8e82f12995b72e3230ae1aad09f08509fdc57a7a)
++++ seed-ui/tools/plugin-nojava-package.xml	(revision 414079d68b51ed8a1e94876faed3f7628cecd654)
+@@ -12,12 +12,9 @@
+    version: should match the vCenter extension version
+    type: keep "html" for this plugin to be deployed in the vSphere HTML client.
+    name: short name displayed in the Administration < Client plugins view
+-   scope: "global" means to deploy this plugin with individual bundles in server/pickup for dev mode
+ -->
+ <pluginPackage id="__packageName__" version="1.0.0" type="html" name="__pluginName__"
+-               description="Add plugin description" vendor="Add vendor"
+-
+-               scope="global">  <!-- REMOVE scope="global" FOR PRODUCTION! -->
++               description="Add plugin description" vendor="Add vendor">
+ 
+    <dependencies>
+       <!--
+Index: seed-ui/e2e/protractor-plugin.config.js
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/e2e/protractor-plugin.config.js	(revision b2a850f3729ece3c96c12a60ec38f746696cfec9)
++++ seed-ui/e2e/protractor-plugin.config.js	(revision b2a850f3729ece3c96c12a60ec38f746696cfec9)
+@@ -0,0 +1,54 @@
++// Protractor configuration file, see link for more information
++// https://github.com/angular/protractor/blob/master/docs/referenceConf.js
++
++const login = require('./helpers/login');
++const logger = require('./helpers/logger');
++const util = require('./helpers/util');
++
++/*global jasmine */
++const { SpecReporter } = require('jasmine-spec-reporter');
++
++exports.config = {
++   framework: 'jasmine',
++   allScriptsTimeout: 11000,
++   specs: [
++      './plugin/**/*.e2e-spec.ts'
++   ],
++   capabilities: {
++      'browserName': 'chrome'
++   },
++   directConnect: true,
++
++   baseUrl: util.getBaseUrl(),
++
++   // The params object will be passed directly to the Protractor instance,
++   // and can be accessed from your test as browser.params. It is an arbitrary
++   // object and can contain anything you may need in your test.
++   // This can be changed via the command line as:
++   //   --params.login.user "Joe"
++   params: {
++      login: {
++         username: 'administrator@vsphere.local',
++         password: 'Admin!23'
++      }
++   },
++   jasmineNodeOpts: {
++      showColors: true,
++      defaultTimeoutInterval: 30000,
++      print: function() {}
++   },
++   beforeLaunch: function() {
++      require('ts-node').register({
++         project: 'e2e/tsconfig.e2e.json'
++         // Use this other path when debugging Protractor in IntelliJ
++         // project: 'tsconfig.e2e.json'
++      });
++   },
++   onPrepare() {
++      return login.start()
++            .then(util.initSession())
++            .then(() => {
++               logger.start("vSphere Client logged in", arguments);
++            });
++   }
++};
+Index: seed-ui/src/app/services/host.service.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/services/host.service.ts	(revision 3dde06915d1e19b05bba1df22ff330d67278dc29)
++++ seed-ui/src/app/services/host.service.ts	(revision 5830289519f2224128069735e8451eb1205cc4e1)
+@@ -1,26 +1,25 @@
+ import { Injectable } from "@angular/core";
+ import { Http } from "@angular/http";
+-import "rxjs/add/operator/toPromise";
++import { Observable } from "rxjs/Observable";
+ 
+ import { GlobalsService, AppAlertService } from "../shared/index";
+ import { AppErrorHandler } from "../shared/appErrorHandler";
+-import { Host } from "./index";
+ import { APP_CONFIG } from "../shared/app-config";
+-
+-/**
+- * This HostServiceBase interface is optional for HostService but it helps
+- * define a simple FakeHostService for testing purposes
+- */
+-export interface HostServiceBase {
+-   getHosts(): Promise<Host[]>;
+-   getHostProperties(objectId: string, properties: string[]): Promise<Host>;
+-}
++import { Host, HostError } from "./host.model";
+ 
+ // Object type
+ export const hostType = "HostSystem";
+ 
++/**
++ * The result of getHosts(), containing either an array of hosts or an error
++ */
++export class HostList {
++   constructor(public hosts: Host[], public error: string = null) {
++   }
++}
++
+ @Injectable()
+-export class HostService implements HostServiceBase {
++export class HostService {
+    constructor(private http: Http,
+                private errorHandler: AppErrorHandler,
+                private gs: GlobalsService,
+@@ -63,19 +62,21 @@
+ 
+    /**
+     * Get all hosts with some default properties.
+-    * Note: this is only used for populating the sidenav component used in dev mode.
+     *
+-    * @returns {Promise<Host[]>}
++    * @returns an Observable with a Host array or an error message
+     */
+-   getHosts(): Promise<Host[]> {
++   getHosts(): Observable<HostList> {
+       const headers = this.gs.getHttpHeaders();
+       const useLiveData = this.gs.useLiveData();
+ 
+       return this.http.get(this.getHostsUrl(), headers)
+-            .toPromise()
+             // Normal response has a data field, mock response from db.json doesn't
+-            .then(response => (useLiveData ? response.json().data : response.json()) as Host[])
+-            .catch(error => this.errorHandler.httpPromiseError(error));
++            .map(response => {
++               const hosts = (useLiveData ? response.json().data : response.json()) as Host[];
++               return new HostList(hosts);
++            })
++            .catch(error =>
++                  Observable.of(new HostList([], this.errorHandler.getHttpError(error))));
+    }
+ 
+    /**
+@@ -83,31 +84,18 @@
+     *
+     * @param objectId
+     * @param properties  Array of property names matching the Host model definition and the db.json mock data
+-    * @returns a Promise with the host model set with corresponding value
++    * @returns an Observable with host data or a HostError
+     */
+-   getHostProperties(objectId: string, properties: string[]): Promise<Host> {
++   getHostProperties(objectId: string, properties: string[]): Observable<Host | HostError> {
+       const headers = this.gs.getHttpHeaders();
+       const url = this.getHostPropertiesUrl(objectId, properties);
+       const useLiveData = this.gs.useLiveData();
+ 
+       return this.http.get(url, headers)
+-            .toPromise()
+-            .then(response => {
+-               if (useLiveData) {
+-                  // A conversion is necessary between the real HostSystem properties and the Host model
+-                  return Host.convertProperties(response.json());
+-               }
+-               // Mock data can be cast to Host directly, but id must be converted to string
+-               const host = response.json() as Host;
+-               host.id = host.id.toString();
+-               return host;
+-            })
++            .map(response => Host.convertProperties(response.json(), useLiveData))
+             .catch(error => {
+-               if (!useLiveData && error.status === 404) {
+-                  // return an empty mock host when mock data is not available
+-                  return new Host();
+-               }
+-               return this.errorHandler.httpPromiseError(error);
++               const errorMsg = this.errorHandler.getHttpError(error);
++               return Observable.of(new HostError(objectId, errorMsg));
+             });
+    }
+ 
+@@ -118,6 +106,7 @@
+     */
+    getHostName(objectId: string, callback: Function): void {
+       this.getHostProperties(objectId, ["name"])
++            .toPromise()
+             .then(host => callback(host))
+             .catch(errorMsg => {
+                this.appAlertService.showError(errorMsg);
+Index: seed-ui/src/app/testing/service-stubs.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/testing/service-stubs.ts	(revision 5830289519f2224128069735e8451eb1205cc4e1)
++++ seed-ui/src/app/testing/service-stubs.ts	(revision 7f7c8df4c62d72db5545e066b807709d8a85fbfb)
+@@ -1,11 +1,10 @@
+ 
+ import { Observable } from "rxjs/Observable";
+-import { Subject } from "rxjs/Subject";
+ import { Response, ResponseOptions } from "@angular/http";
+ 
+ // [removable-chassis-code]
+ import { Chassis } from "../services/chassis/chassis.model";
+-import { chassisList } from "../services/testing/fake-chassis";
++import { fakeChassisList } from "../services/testing/fake-chassis";
+ // [end-chassis-code]
+ 
+ /*
+@@ -31,7 +30,7 @@
+       return Promise.resolve(resp);
+    },
+    getChassisList():  Promise<Chassis[]> {
+-      return Promise.resolve(chassisList);
++      return Promise.resolve(fakeChassisList);
+    }
+ };
+ // [end-chassis-code]
+@@ -39,7 +38,7 @@
+ export const echoServiceStub = {
+    sendEcho(echoMsg: string): Observable<string> {
+       console.log("sendEcho: " + echoMsg);
+-      return new Subject().asObservable();
++      return Observable.of(echoMsg);
+    },
+    sendEchoVersion2(echoMsg: string): Promise<string> {
+       console.log("sendEchoVersion2: " + echoMsg);
+Index: seed-ui/src/app/shared/globals.service.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/shared/globals.service.ts	(revision b4ac68d9669f14e9a1ed1a5546d938f116b7cc3f)
++++ seed-ui/src/app/shared/globals.service.ts	(revision b1f757c24e7beca417c09c64af2c96885c668856)
+@@ -15,7 +15,7 @@
+ export class Globals {
+    readonly pluginMode: boolean;
+ 
+-   // The WEB_PLATFORM global object giving access to SDK 6.5  APIs
++   // The webPlatform object giving access to SDK APIs.
+    readonly webPlatform: WebPlatform;
+ 
+    constructor() {
+@@ -23,15 +23,24 @@
+       // (this assumes the app itself doesn't use iFrames, which is the normal case)
+       this.pluginMode = (window.self !== window.parent);
+ 
+-      // WEB_PLATFORM global is defined on the vSphere Client window, except for older versions and dev mode
+-      this.webPlatform = window.parent["WEB_PLATFORM"] ||
+-            (this.pluginMode ? this.getOldVersionPlatform() : webPlatformStub);
++      if (this.pluginMode) {
++         if (window.parent["vSphereClientSDK"]) {
++            // New bootstrapping since SDK 6.5u1
++            this.webPlatform = window.parent["vSphereClientSDK"].getWebPlatformApi(window);
++         } else {
++            // Versions 6.0 and 6.5
++            this.webPlatform = window.parent["WEB_PLATFORM"] || this.getOldVersionPlatform();
+ 
+-      // Patch for setGlobalRefreshHandler API if it isn't defined yet
+-      if (!this.webPlatform.setGlobalRefreshHandler) {
+-         this.webPlatform.setGlobalRefreshHandler = function (handler) {
+-            window.parent["WEB_PLATFORM.refresh" + window.name] = handler;
+-         };
++            // Patch setGlobalRefreshHandler API if necessary
++            if (this.webPlatform.getClientType() === "flex" ||
++                  this.webPlatform.getClientVersion() === "6.5.0") {
++               this.webPlatform.setGlobalRefreshHandler = function (handler) {
++                  window.parent["WEB_PLATFORM"]["refresh" + window.name] = handler;
++               };
++            }
++         }
++      } else {
++         this.webPlatform = webPlatformStub;
+       }
+    }
+ 
+@@ -49,6 +58,8 @@
+       webPlatformElement.getRootPath = function() { return "/vsphere-client"; };
+       webPlatformElement.getClientType = function() { return "flex"; };
+       webPlatformElement.getClientVersion = function() { return "6.0"; };
++
++      window.parent["WEB_PLATFORM"] = webPlatformElement;
+       return webPlatformElement;
+    }
+ }
+@@ -82,7 +93,8 @@
+       if (this.isPluginMode()) {
+          this.sidenav = false;
+          this.devUI = false;
+-
++         const userSession = this.getWebPlatform().getUserSession();
++         this.clientId = userSession ? userSession.clientId : null;
+       } else {
+          // Dev mode defaults: re-use what was last saved as user setting
+          this.sidenav = (userSetting.getSetting("sidenav") === "false" ? false : true);
+Index: seed-service/tools/remove-chassis-code.sh
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-service/tools/remove-chassis-code.sh	(revision 27f77a84115f56bdcddf8fef9d42373e1c82ab73)
++++ seed-service/tools/remove-chassis-code.sh	(revision 3dde06915d1e19b05bba1df22ff330d67278dc29)
+@@ -1,9 +1,17 @@
+ #!/bin/sh
++# This script remove all chassis related code in the current plugin project
++# It must be run from the /tools directory
+ 
+-toolsDir=`dirname $0`
+-echo "Remove all chassis related code in this project? Y or N [N]"
+-read response
+-if [[ $response == "y" || $response == "Y" ]]; then
++if [[ $1 ]]; then
++    toolsDir=$1
++    echo "Removing all chassis related code in this project!"
++    response="y"
++else
++    toolsDir=`dirname $0`
++    echo "Remove all chassis related code in this project? Y or N [N]"
++    read response
++fi
++if [[ $1 == "y" || $response == "y" || $response == "Y" ]]; then
+    # Remove chassis specific files
+    find $toolsDir/../src -name 'Chassis*' -exec rm -f {} \;
+    find $toolsDir/../src -name 'ModelObject.java' -exec rm -f {} \;
+Index: seed-ui/src/app/shared/appErrorHandler.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/shared/appErrorHandler.ts	(revision f96305d4d06931b682b1ce197d13d2e345e82260)
++++ seed-ui/src/app/shared/appErrorHandler.ts	(revision 5830289519f2224128069735e8451eb1205cc4e1)
+@@ -43,17 +43,22 @@
+    /**
+     * Handle error message for http observables
+     * @param error
+-    * @returns {Promise<never>}
++    * @returns {Observable<never>}
+     */
+-   httpObservableError(error: any): Observable<any> {
++   httpObservableError(error: any): Observable<string> {
+       return Observable.throw(
+             this.formatHttpError(error, this.gs.isPluginMode(), this.gs.useLiveData()));
+    }
+ 
+-   // Note: formatHttpError is not private on purpose,
+-   // this makes unit-testing easier, see appErrorHandler.spec.ts
++   /**
++    * @param error
++    * @returns a formatted error message
++    */
++   getHttpError(error: any): string {
++      return this.formatHttpError(error, this.gs.isPluginMode(), this.gs.useLiveData());
++   }
+ 
+-   formatHttpError(error: any, isPluginMode = true, useLiveData = true) {
++   private formatHttpError(error: any, isPluginMode = true, useLiveData = true) {
+       let errMsg;
+       if (typeof error === 'string') {
+          errMsg = error;
+@@ -67,16 +72,15 @@
+ 
+       } else if (error instanceof Response && error.status === 500) {
+          // Server returned an error, either in json or text format
+-         errMsg = error.statusText + " => ";
++         errMsg = error.statusText + ": ";
+          try {
+             const errorBody = error.json();
+             // Remove extra lines (stack trace), they are available in the browser console or server log
+             errMsg += errorBody.message.replace(/\n.*/g, "");
+          } catch (e) {
++            errMsg += this.getErrorText(error)
+             if (!isPluginMode && useLiveData) {
+                errMsg += liveDataHelp;
+-            } else {
+-               errMsg += error.text().replace(/\n.*/g, "");
+             }
+          }
+ 
+@@ -98,4 +102,13 @@
+       }
+       return errMsg;
+    }
++
++   private getErrorText(error: Response): string {
++      const text: string = error.text();
++      if (text.indexOf("<h1>") > 0) {
++         return text.substring((text.indexOf("<h1>") + 4), text.indexOf("</h1>"));
++      } else {
++         return text.replace(/\n.*/g, "");
++      }
++   }
+ }
+Index: seed-ui/src/app/shared/refresh.service.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/shared/refresh.service.ts	(revision 414079d68b51ed8a1e94876faed3f7628cecd654)
++++ seed-ui/src/app/shared/refresh.service.ts	(revision 5830289519f2224128069735e8451eb1205cc4e1)
+@@ -1,16 +1,19 @@
+ import { Injectable } from "@angular/core";
+-import { Subject }    from 'rxjs/Subject';
+ 
+ import { AppAlertService }   from "./app-alert.service";
++import { BehaviorSubject } from "rxjs/BehaviorSubject";
+ 
+ /**
+  * Service used to send a "refresh event" to any observer view
+  */
+ @Injectable()
+ export class RefreshService {
+-   // Use an rxjs Subject to multicast to multiple observers.
+-   // See http://reactivex.io/rxjs/manual/overview.html#subject
+-   private refreshSource = new Subject();
++   // Use an rxjs BehaviorSubject to multicast a refresh event to all observers
++   // but also to emit a value right away so that views can subscribe to it for
++   // their initial rendering (see monitor.component.ts)
++   //
++   // See http://reactivex.io/rxjs/manual/overview.html#behaviorsubject
++   private refreshSource = new BehaviorSubject(true);
+    public refreshObservable$ = this.refreshSource.asObservable();
+ 
+    constructor(private appAlertService: AppAlertService) {
+@@ -21,6 +24,6 @@
+       this.appAlertService.closeAlert();
+ 
+       // Propagate refresh event to subscribers
+-      this.refreshSource.next();
++      this.refreshSource.next(true);
+    }
+ }
+Index: seed-ui/src/app/views/main/main.component.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/views/main/main.component.ts	(revision 414079d68b51ed8a1e94876faed3f7628cecd654)
++++ seed-ui/src/app/views/main/main.component.ts	(revision 386b4700411670cde8c643aad709ea68430ae21b)
+@@ -1,5 +1,7 @@
+ import { Component, Input, OnInit, OnDestroy, ViewChild, Inject,
+-         forwardRef, ChangeDetectorRef } from "@angular/core";
++         forwardRef } from "@angular/core";
++import { Observable } from "rxjs/Observable";
++import { Subject } from "rxjs/Subject";
+ import { Subscription } from "rxjs/Subscription";
+ import { TabLink } from "clarity-angular";
+ 
+@@ -20,7 +22,6 @@
+    templateUrl: "./main.component.html",
+ })
+ export class MainComponent implements OnInit, OnDestroy {
+-   chassisList: Chassis[];  // [removable-chassis-line]
+    currentTab: string;
+    echoMsg: string;
+    updateTime: string;
+@@ -29,6 +30,11 @@
+    private echoSubscription: Subscription;
+    private refreshSubscription: Subscription;
+ 
++   // [removable-chassis-code]
++   refreshChassisList$ = new Subject();
++   chassisList$: Observable<Chassis[]>;
++   // [end-chassis-code]
++
+    // Note: use @ViewChildren in case you have more than one dialogBox.
+    @ViewChild(DialogBoxComponent) dialogBox: DialogBoxComponent;
+ 
+@@ -42,16 +48,54 @@
+                @Inject(forwardRef(() => NavService)) public nav: NavService,
+                private refreshService: RefreshService,
+                private userSettingService: UserSettingService,
+-               public  i18n: I18nService,
+-               private changeDetector: ChangeDetectorRef) {
++               public  i18n: I18nService) {
+ 
+       this.webPlatform = this.gs.getWebPlatform();
+ 
++      // [removable-chassis-code]
++      this.chassisList$ = this.refreshChassisList$
++            .switchMap(() => {
++               return this.chassisService.getChassisList(true);
++            })
++            .catch(errorMsg => {
++               this.appAlertService.showError(errorMsg);
++               return Observable.of(new Chassis[0]);
++            });
++      // [end-chassis-code]
++
+       // Subscribe to refreshService to handle the global refresh action
+       this.refreshSubscription = refreshService.refreshObservable$.subscribe(
+             () => this.refreshView());
+    }
+ 
++   private refreshView(): void {
++      if (this.currentTab === 'homeTab') {
++         // Timestamp to show how the home view is refreshed through the RefreshService.
++         this.updateTime = new Date().toLocaleTimeString();
++      }
++
++      // Reload the chassis data by triggering refreshChassisList$  [removable-chassis-code]
++      if (this.currentTab === 'chassisTab') {
++         this.refreshChassisList$.next();
++      }
++      // [end-chassis-code]
++   }
++
++   ngOnInit(): void {
++      let savedTab: string = this.userSettingService.getSetting("mainTab");
++      if (savedTab !== "echoTab" && savedTab !== "chassisTab") {
++         savedTab = "homeTab";
++      }
++      this.currentTab = savedTab;
++   }
++
++   ngOnDestroy(): void {
++      this.refreshSubscription.unsubscribe();
++      if (this.echoSubscription) {
++         this.echoSubscription.unsubscribe();
++      }
++   }
++
+    sendEcho(useLocalPopup: boolean): void {
+       this.appAlertService.closeAlert();
+ 
+@@ -137,61 +181,10 @@
+       return (id === this.currentTab);
+    }
+ 
+-   setActiveTab(id: string, inRefreshView: boolean = false): void {
+-      this.currentTab = id;
+-
+-      if (this.currentTab === 'homeTab') {
+-         // Timestamp to show how the home view is refreshed through the RefreshService.
+-         this.updateTime = new Date().toLocaleTimeString();
+-      }
+-
+-      // Reload the view data for tabs who need it  [removable-chassis-code]
+-      if (this.currentTab === 'chassisTab') {
+-         this.getChassisList();
+-      }
+-      // [end-chassis-code]
+-   }
+-
+    onTabSelected(event: TabLink) {
+       this.appAlertService.closeAlert();
+-      this.setActiveTab(event.id);
++      this.currentTab = event.id;
+       this.userSettingService.setSetting("mainTab", event.id);
++      this.refreshView();
+    }
+-
+-   ngOnInit(): void {
+-      this.initCurrentTabView();
+-   }
+-
+-   ngOnDestroy(): void {
+-      this.refreshSubscription.unsubscribe();
+-      if (this.echoSubscription) {
+-         this.echoSubscription.unsubscribe();
+-      }
+-   }
+-
+-   private refreshView(): void {
+-      this.initCurrentTabView(true);
+-   }
+-
+-   private initCurrentTabView(inRefreshView: boolean = false): void {
+-      let savedTab: string = this.userSettingService.getSetting("mainTab");
+-      if (savedTab !== "echoTab" && savedTab !== "chassisTab") {
+-         savedTab = "homeTab";
+-      }
+-      this.setActiveTab(savedTab, inRefreshView);
+-   }
+-
+-   // [removable-chassis-code]
+-   private getChassisList(inRefreshView: boolean = false): void {
+-      this.chassisService.getChassisList(true)
+-            .then(chassisList => {
+-               this.chassisList = chassisList;
+-               if (inRefreshView) {
+-                  // This is necessary to refresh the DOM when coming from a Refresh event
+-                  this.changeDetector.detectChanges();
+-               }
+-            })
+-            .catch(errorMsg => this.appAlertService.showError(errorMsg));
+-   }
+-   // [end-chassis-code]
+ }
+Index: seed-ui/src/app/shared/app-alert.component.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/shared/app-alert.component.ts	(revision 414079d68b51ed8a1e94876faed3f7628cecd654)
++++ seed-ui/src/app/shared/app-alert.component.ts	(revision 5830289519f2224128069735e8451eb1205cc4e1)
+@@ -1,4 +1,4 @@
+-import { Component, Input, OnInit, OnDestroy } from "@angular/core";
++import { Component, Input, OnInit, OnDestroy, ChangeDetectorRef } from "@angular/core";
+ import { Subscription }   from 'rxjs/Subscription';
+ 
+ import { AppAlertService }   from "./app-alert.service";
+@@ -19,7 +19,8 @@
+    subForOpen: Subscription;
+    subForClose: Subscription;
+ 
+-   constructor(private appAlertService: AppAlertService) {
++   constructor(private appAlertService: AppAlertService,
++               private changeDetector: ChangeDetectorRef) {
+       // Observe alertMessage$ and open the Alert component when a message arrives
+       // Any existing message is overridden with the new one.
+       this.subForOpen = appAlertService.alertMessage$.subscribe(
+@@ -27,6 +28,8 @@
+                this.message = param[0];
+                this.alertType = param[1];
+                this.alertClosed = false;
++               // This seems necessary in case there are many events in a row
++               this.changeDetector.detectChanges();
+             }
+       );
+       // Register to observe the closeAlert$ source and close the Alert component
+Index: seed-ui/src/app/shared/dev/subnav.component.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/shared/dev/subnav.component.ts	(revision 414079d68b51ed8a1e94876faed3f7628cecd654)
++++ seed-ui/src/app/shared/dev/subnav.component.ts	(revision 5830289519f2224128069735e8451eb1205cc4e1)
+@@ -1,6 +1,8 @@
+ import { Component, OnInit, Input } from '@angular/core';
+ import { NavService } from "../../services/nav.service";
+ import { GlobalsService } from "../globals.service";
++import { Observable } from "rxjs/Observable";
++import { ActivatedRoute } from "@angular/router";
+ 
+ /**
+  * Subnav component with tabs to switch between object views
+@@ -11,12 +13,16 @@
+    styleUrls: ['./subnav.component.scss']
+ })
+ export class SubnavComponent implements OnInit {
+-   // objectId and objectType injected by the parent component
+-   @Input() objectId;
++   objectId$: Observable<string>;
++
++   // objectType injected by the parent component
+    @Input() objectType;
+ 
+    constructor(private gs: GlobalsService,
+-               public nav: NavService) {
++               public nav: NavService,
++               private route: ActivatedRoute) {
++      this.objectId$ = this.route.paramMap
++            .map(paramMap => paramMap.get('id'));
+    }
+ 
+    ngOnInit() {
+Index: seed-ui/src/app/views/main/main.component.html
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/views/main/main.component.html	(revision 414079d68b51ed8a1e94876faed3f7628cecd654)
++++ seed-ui/src/app/views/main/main.component.html	(revision b7ad480e006fa7e311f114bba2c7a2266bf64c79)
+@@ -87,7 +87,7 @@
+                   <clr-dg-column>{{i18n.translate("header.dimensions")}}</clr-dg-column>
+                   <clr-dg-column [clrDgField]="'serverType'">{{i18n.translate("header.serverType")}}</clr-dg-column>
+ 
+-                  <clr-dg-row *clrDgItems="let chassis of chassisList" [clrDgItem]="chassis">
++                  <clr-dg-row *clrDgItems="let chassis of (chassisList$ | async)?.allChassis" [clrDgItem]="chassis">
+                      <clr-dg-action-overflow>
+                         <button class="action-item" (click)="gotoChassis(chassis)">{{i18n.translate("menu.goto")}}</button>
+                         <button class="action-item" (click)="editChassis(chassis)">{{i18n.translate("menu.edit")}}</button>
+Index: seed-ui/src/app/shared/appErrorHandler.spec.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/shared/appErrorHandler.spec.ts	(revision 5830289519f2224128069735e8451eb1205cc4e1)
++++ seed-ui/src/app/shared/appErrorHandler.spec.ts	(revision 7f7c8df4c62d72db5545e066b807709d8a85fbfb)
+@@ -3,6 +3,7 @@
+ 
+ // Internal imports
+ import { AppErrorHandler, liveDataHelp, jsonServerHelp } from "../shared/appErrorHandler";
++import { GlobalsService } from "./globals.service";
+ 
+ // Simple service unit tests without assistance from Angular testing utilities
+ 
+@@ -10,9 +11,22 @@
+    let appErrorHandler: AppErrorHandler;
+    const errorFromServer = "some error message\nsome more lines";
+    const errorToDisplay = "some error message";
++   let pluginMode: boolean;
++   let useLiveData: boolean;
++
++   const globalsServiceStub = {
++      isPluginMode: function() {
++         return pluginMode;
++      },
++      useLiveData: function() {
++         return useLiveData;
++      }
++   };
+ 
+    beforeEach(() => {
+-      appErrorHandler = new AppErrorHandler(null);
++      appErrorHandler = new AppErrorHandler(<GlobalsService>globalsServiceStub);
++      pluginMode = true;
++      useLiveData = true;
+    });
+ 
+    it ("formats server errors correctly - with body object", ()  => {
+@@ -27,8 +41,8 @@
+       const statusText = "Server error";
+       error.statusText = statusText;
+ 
+-      const errMsg = appErrorHandler.formatHttpError(error);
+-      expect(errMsg).toBe(statusText + " => " + errorToDisplay);
++      const errMsg = appErrorHandler.getHttpError(error);
++      expect(errMsg).toBe(statusText + ": " + errorToDisplay);
+    });
+ 
+    it ("formats server errors correctly - with body string", ()  => {
+@@ -43,8 +57,8 @@
+       const statusText = "Server error";
+       error.statusText = statusText;
+ 
+-      const errMsg = appErrorHandler.formatHttpError(error);
+-      expect(errMsg).toBe(statusText + " => " + errorToDisplay);
++      const errMsg = appErrorHandler.getHttpError(error);
++      expect(errMsg).toBe(statusText + ": " + errorToDisplay);
+    });
+ 
+ 
+@@ -60,17 +74,16 @@
+       const statusText = "some status";
+       error.statusText = statusText;
+ 
+-      let pluginMode = true;
+-      let errMsg = appErrorHandler.formatHttpError(error, pluginMode);
++      let errMsg = appErrorHandler.getHttpError(error);
+       expect(errMsg).toBe("Http error: 401, " + statusText);
+ 
+       pluginMode = false;
+-      errMsg = appErrorHandler.formatHttpError(error, pluginMode);
++      errMsg = appErrorHandler.getHttpError(error);
+       expect(errMsg).toBe("Http error: 401, " + statusText + liveDataHelp);
+ 
+       pluginMode = true;
+       error.status = 404;
+-      errMsg = appErrorHandler.formatHttpError(error, pluginMode);
++      errMsg = appErrorHandler.getHttpError(error);
+       expect(errMsg).toBe("Http error: 404, " + statusText + " at URL: " + resOptions.url);
+    });
+ 
+@@ -84,9 +97,9 @@
+       };
+       const error = new Response(resOptions);
+ 
+-      const pluginMode = false;
+-      const useLiveData = false;
+-      const errMsg = appErrorHandler.formatHttpError(error, pluginMode, useLiveData);
++      pluginMode = false;
++      useLiveData = false;
++      const errMsg = appErrorHandler.getHttpError(error);
+       expect(errMsg).toBe(jsonServerHelp);
+    });
+ });
+Index: seed-ui/src/app/shared/dev/sidenav.component.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/shared/dev/sidenav.component.ts	(revision 414079d68b51ed8a1e94876faed3f7628cecd654)
++++ seed-ui/src/app/shared/dev/sidenav.component.ts	(revision b7ad480e006fa7e311f114bba2c7a2266bf64c79)
+@@ -1,14 +1,14 @@
+-import { Component, OnInit, OnDestroy, Input, ViewChild, ElementRef } from "@angular/core";
+-import { Subscription } from "rxjs/Subscription";
++import { Component, ViewChildren, ElementRef, QueryList, AfterViewInit } from "@angular/core";
++import { Observable } from "rxjs/Observable";
+ 
+ import { GlobalsService, RefreshService,
+          AppAlertService}   from "../index";
+-import { Host, HostService } from "../../services/index";
++import { HostService } from "../../services/index";
+ import { NavService } from "../../services/nav.service";
+ import { UserSettingService } from "app/shared/user-settings.service";
++import { HostList } from "../../services/host.service";
+ // [removable-chassis-code]
+-import { ChassisService } from "../../services/chassis/chassis.service";
+-import { Chassis } from "../../services/chassis/chassis.model";
++import { ChassisService, ChassisList } from "../../services/chassis/chassis.service";
+ // [end-chassis-code]
+ 
+ /**
+@@ -19,15 +19,15 @@
+    styleUrls: ["./sidenav.component.scss"],
+    templateUrl: "./sidenav.component.html"
+ })
+-export class SidenavComponent  implements OnInit, OnDestroy {
+-   hosts: Host[];
++export class SidenavComponent  implements AfterViewInit {
++   hostList$: Observable<HostList>;
+    selectedHost = -1;
+-   private subscription: Subscription;
+-   @ViewChild("hostsInput") hostsListInput: ElementRef;
++   @ViewChildren("hostsInput") hostListInput: QueryList<ElementRef>;
++
+    // [removable-chassis-code]
+-   @ViewChild("chassisInput") chassisListInput: ElementRef;
+-   chassisList: Chassis[];
++   chassisList$: Observable<ChassisList>;
+    selectedChassis = -1;
++   @ViewChildren("chassisInput") chassisListInput: QueryList<ElementRef>;
+    // [end-chassis-code]
+ 
+    constructor(public gs: GlobalsService,
+@@ -37,8 +37,48 @@
+                public navService: NavService,
+                private refreshService: RefreshService,
+                private userSettingService: UserSettingService) {
+-      this.subscription = refreshService.refreshObservable$.subscribe(
+-            () => this.refreshView());
++      this.initObservables();
++   }
++
++   // Initialize the observables representing the object lists. No services are called here,
++   // they will be called only when observables are subscribed to by using the "async" pipe.
++   private initObservables(): void {
++      this.hostList$ = this.refreshService.refreshObservable$
++            .switchMap(() => this.hostService.getHosts())
++            .do(hostList => {
++               if (hostList.error) {
++                  this.appAlertService.showError(hostList.error);
++               } else if (hostList.hosts.length === 0) {
++                  this.appAlertService.showInfo("No hosts found");
++               }
++            });
++      // [removable-chassis-code]
++      this.chassisList$ = this.refreshService.refreshObservable$
++            .switchMap(() => this.chassisService.getChassisList(true))
++            .do(chassisList => {
++               if (chassisList.error) {
++                  this.appAlertService.showError(chassisList.error);
++               }
++            });
++      // [end-chassis-code]
++   }
++
++   ngAfterViewInit(): void {
++      // Restore the lists' collapsed state from local settings.  Only hosts are shown initially.
++      // @ViewChildren hostListInput allows to detect when the <input #hostsInput> element is
++      // created in the DOM, i.e. after *ngIf="hostList$.." becomes true in the HTML template
++
++      const hostsListCollapsed: boolean = (this.userSettingService.getSetting("showHosts") === "false");
++      this.hostListInput.changes.subscribe(elements => {
++         elements.first.nativeElement.checked = hostsListCollapsed;
++      });
++
++      // [removable-chassis-code]
++      const chassisListCollapsed: boolean = !(this.userSettingService.getSetting("showChassis") === "true");
++      this.chassisListInput.changes.subscribe(elements => {
++         elements.first.nativeElement.checked = chassisListCollapsed;
++      });
++      // [end-chassis-code]
+    }
+ 
+    selectHost(hostId, index): void {
+@@ -55,44 +95,10 @@
+    }
+    // [end-chassis-code]
+ 
+-   refreshView(): void {
+-      this.hostService.getHosts()
+-            .then(hosts => {
+-               this.hosts = hosts;
+-               if (this.hosts.length === 0) {
+-                  this.appAlertService.showInfo("No hosts found");
+-               }
+-            })
+-            .catch(errorMsg =>  this.appAlertService.showError(errorMsg));
+-
+-      // get chassis sorted by name [removable-chassis-code]
+-      this.chassisService.getChassisList(true)
+-            .then(chassisList => {
+-               this.chassisList = chassisList;
+-            })
+-            .catch(errorMsg =>  this.appAlertService.showError(errorMsg));
+-      // [end-chassis-code]
+-   }
+-
+    saveSetting(event): void {
+       const key = "show" + event.target.id;
+       this.userSettingService.setSetting(key, !event.target.checked);
+    }
+ 
+-   ngOnInit(): void {
+-      this.refreshView();
+-
+-      // The lists collapsed state is saved as local setting.  Only hosts are shown initially.
+-      const hostsListCollapsed: boolean = (this.userSettingService.getSetting("showHosts") === "false");
+-      this.hostsListInput.nativeElement.checked = hostsListCollapsed;
+-      // [removable-chassis-code]
+-      const chassisListCollapsed: boolean = !(this.userSettingService.getSetting("showChassis") === "true");
+-      this.chassisListInput.nativeElement.checked = chassisListCollapsed;
+-      // [end-chassis-code]
+-   }
+-   ngOnDestroy(): void {
+-      this.subscription.unsubscribe();
+-   }
+-
+ }
+ 
+Index: seed-ui/src/app/shared/vSphereClientSdkTypes.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/shared/vSphereClientSdkTypes.ts	(revision 2dc639ad2a43df80b6e20e81b5044271c8a60df2)
++++ seed-ui/src/app/shared/vSphereClientSdkTypes.ts	(revision 54dbe7531d6d72b67419e1991f0524ee7f3bc06a)
+@@ -29,5 +29,5 @@
+ export class ServerInfo {
+    serviceGuid: string;
+    serviceUrl: string;
+-   sessionId: string;
++   sessionKey: string;
+ }
+Index: seed-ui/src/app/shared/dev/subnav.component.html
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/shared/dev/subnav.component.html	(revision 414079d68b51ed8a1e94876faed3f7628cecd654)
++++ seed-ui/src/app/shared/dev/subnav.component.html	(revision 5830289519f2224128069735e8451eb1205cc4e1)
+@@ -1,13 +1,15 @@
+ <nav class="subnav">
+-  <ul class="nav">
+-    <li class="nav-item">
+-      <a class="nav-link" [class.active]="nav.getViewType() === 'summary'" href="javascript://"
+-         (click)="nav.showObjectView(objectId, objectType, 'summary')">Summary</a></li>
+-    <li class="nav-item">
+-      <a class="nav-link" [class.active]="nav.getViewType() === 'monitor'" href="javascript://"
+-         (click)="nav.showObjectView(objectId, objectType, 'monitor')">Monitor</a></li>
+-    <li class="nav-item">
+-      <a class="nav-link" [class.active]="nav.getViewType() === 'manage'" href="javascript://"
+-         (click)="nav.showObjectView(objectId, objectType, 'manage')">Configure</a></li>
+-  </ul>
++  <div  *ngIf="objectId$ | async as objectId">
++    <ul class="nav">
++      <li class="nav-item">
++        <a class="nav-link" [class.active]="nav.getViewType() === 'summary'" href="javascript://"
++           (click)="nav.showObjectView(objectId, objectType, 'summary')">Summary</a></li>
++      <li class="nav-item">
++        <a class="nav-link" [class.active]="nav.getViewType() === 'monitor'" href="javascript://"
++           (click)="nav.showObjectView(objectId, objectType, 'monitor')">Monitor</a></li>
++      <li class="nav-item">
++        <a class="nav-link" [class.active]="nav.getViewType() === 'manage'" href="javascript://"
++           (click)="nav.showObjectView(objectId, objectType, 'manage')">Configure</a></li>
++    </ul>
++  </div>
+ </nav>
+Index: seed-ui/src/app/services/testing/fake-chassis.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/services/testing/fake-chassis.ts	(revision 5830289519f2224128069735e8451eb1205cc4e1)
++++ seed-ui/src/app/services/testing/fake-chassis.ts	(revision 7f7c8df4c62d72db5545e066b807709d8a85fbfb)
+@@ -1,3 +1,4 @@
++import { Chassis } from "../chassis/chassis.model";
+ /**
+  * Fake chassis data used for standalone mode and for unit testing
+  *
+@@ -8,22 +9,20 @@
+  *    dimensions: "20in x 30in x 17in",
+  *    serverType: "Server_Type 0"
+  * }
+- *
+- * [removable-chassis-code]
+  */
+ 
+ export const initialChassisCount = 30;
+ 
+ export const chassisIdConstant = "urn:cr:samples:Chassis:server1%252Fchassis-";
+ 
+-export const chassisList = new Array(initialChassisCount)
++export const fakeChassisList: Array<Chassis> = new Array(initialChassisCount)
+       .fill(undefined).map((val, index) => {
+-   return {
+-      id: chassisIdConstant + index,
+-      name: "mock-Chassis " + (index + 1),
+-      dimensions: "20in x 30in x 17in",
+-      serverType: "Server Type " + (index % 3)
+-   };
++   const id = chassisIdConstant + index;
++   const name = "mock-Chassis " + (index + 1);
++   const dimensions =  "20in x 30in x 17in";
++   const serverType = "Server Type " + (index % 3);
++   return new Chassis(id, name, dimensions, serverType);
+ });
+ 
+ 
++
+Index: seed-ui/src/app/shared/dev/clientid.component.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/shared/dev/clientid.component.ts	(revision 2dc639ad2a43df80b6e20e81b5044271c8a60df2)
++++ seed-ui/src/app/shared/dev/clientid.component.ts	(revision 54dbe7531d6d72b67419e1991f0524ee7f3bc06a)
+@@ -1,4 +1,4 @@
+-import { Component, Input, OnInit } from "@angular/core";
++import { Component, Input, OnInit, ViewChild, ElementRef } from "@angular/core";
+ 
+ import { APP_CONFIG } from "../app-config";
+ import { GlobalsService, RefreshService }   from "../index";
+@@ -13,6 +13,7 @@
+ export class ClientidComponent implements OnInit {
+    @Input() clientId: string;
+    @Input() modalOpened = false;
++   @ViewChild("input") inputChild: ElementRef;
+    public readonly settingViewUrl = "https://localhost:9443/ui/#/?extensionId=" + APP_CONFIG.packageName + ".settingsView";
+ 
+    constructor(public gs: GlobalsService,
+@@ -30,6 +31,9 @@
+ 
+    public show(): void {
+       this.modalOpened = true;
++      setTimeout(() => {
++         this.inputChild.nativeElement.select();
++      }, 500);
+    }
+ 
+    onSubmit(): void {
+@@ -38,6 +42,7 @@
+          // Save the client id for dev mode
+          this.gs.setClientId(this.clientId);
+          this.refreshService.refreshView();
++         this.clientId = "";
+       }
+    }
+ 
+Index: seed-ui/src/app/services/chassis/chassis.model.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/services/chassis/chassis.model.ts	(revision 414079d68b51ed8a1e94876faed3f7628cecd654)
++++ seed-ui/src/app/services/chassis/chassis.model.ts	(revision b7ad480e006fa7e311f114bba2c7a2266bf64c79)
+@@ -2,27 +2,32 @@
+  * A simple Chassis model
+  */
+ export class Chassis {
+-   id: string;
+-   name: string;
+-   dimensions: string;
+-   serverType: string;
+ 
+-   constructor(clone: Chassis = null) {
+-      this.id = clone ? clone.id : "";
+-      this.name = clone ? clone.name : "";
+-      this.dimensions = clone ? clone.dimensions : "";
+-      this.serverType = clone ? clone.serverType : "";
++   constructor(public id: string, public name: string,
++               public dimensions: string, public serverType: string) {
+    }
+ 
+    // Warning: methods defined below can only be used on chassis objects created explicitly.
+    // i.e. they won't exist on chassis objects converted from Json data
+ 
+    clone(): Chassis {
+-      return new Chassis(this);
++      return new Chassis(this.id, this.name, this.dimensions, this.serverType);
+    }
+ 
+    equals(other: Chassis): boolean {
+       return other &&
+          (this.name === other.name && this.dimensions === other.dimensions && this.serverType === other.serverType);
+    }
++
++   static create() {
++      return new Chassis(null, "", "", "");
++   }
+ }
++
++/**
++ * An object for reporting errors while getting chassis data
++ */
++export class ChassisError {
++   constructor(public id: string, public error: string) {
++   }
++}
+\ No newline at end of file
+Index: seed-ui/src/app/shared/dev/sidenav.component.html
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/shared/dev/sidenav.component.html	(revision 414079d68b51ed8a1e94876faed3f7628cecd654)
++++ seed-ui/src/app/shared/dev/sidenav.component.html	(revision 5830289519f2224128069735e8451eb1205cc4e1)
+@@ -2,29 +2,38 @@
+ <nav class="sidenav">
+    <section class="sidenav-content">
+       <!-- List of hosts -->
+-      <section class="nav-group collapsible">
+-         <input #hostsInput id="Hosts" type="checkbox" (click)="saveSetting($event)">
+-         <label for="Hosts">Hosts</label>
+-         <ul class="nav-list">
+-            <li *ngFor="let host of hosts; let idx = index">
+-               <a class="nav-link" (click)="selectHost(host.id, idx)" [class.active]="idx === selectedHost">
+-                  <clr-icon shape="host" size="24"></clr-icon>{{host.name}}</a>
+-            </li>
+-         </ul>
+-      </section>
+-
++      <div  *ngIf="hostList$ | async as hostList">
++         <section class="nav-group collapsible" >
++            <input #hostsInput id="Hosts" type="checkbox" (click)="saveSetting($event)" [attr.checked]="false">
++            <label for="Hosts">Hosts</label>
++            <ul class="nav-list" *ngIf="!hostList.error; else hostListError">
++               <li *ngFor="let host of hostList.hosts; let idx = index">
++                  <a class="nav-link" (click)="selectHost(host.id, idx)" [class.active]="idx === selectedHost">
++                     <clr-icon shape="host" size="24"></clr-icon>{{host.name}}</a>
++               </li>
++            </ul>
++            <ng-template #hostListError>
++               Error getting hosts!
++            </ng-template>
++         </section>
++      </div>
+       <!-- List of chassis [removable-chassis-code] -->
+-      <section class="nav-group collapsible">
+-         <input #chassisInput id="Chassis" type="checkbox" (click)="saveSetting($event)">
+-         <label for="Chassis">Chassis</label>
+-         <ul class="nav-list">
+-            <li *ngFor="let chassis of chassisList; let idx = index">
+-               <a class="nav-link" (click)="selectChassis(chassis.id, idx)" [class.active]="idx === selectedChassis">
+-                  <!-- using view-list icon because I couldn't find anything better for a chassis :-) -->
+-                  <clr-icon shape="view-list" size="20"></clr-icon> {{chassis.name}}</a>
+-            </li>
+-         </ul>
+-      </section>
++      <div  *ngIf="chassisList$ | async as chassisList">
++         <section class="nav-group collapsible">
++            <input #chassisInput id="Chassis" type="checkbox" (click)="saveSetting($event)" [attr.checked]="false">
++            <label for="Chassis">Chassis</label>
++            <ul class="nav-list" *ngIf="!chassisList.error; else chassisListError">
++               <li *ngFor="let chassis of chassisList.allChassis; let idx = index">
++                  <a class="nav-link" (click)="selectChassis(chassis.id, idx)" [class.active]="idx === selectedChassis">
++                     <!-- using view-list icon because I couldn't find anything better for a chassis :-) -->
++                     <clr-icon shape="view-list" size="20"></clr-icon> {{chassis.name}}</a>
++               </li>
++            </ul>
++            <ng-template #chassisListError>
++               Error getting chassis!
++            </ng-template>
++         </section>
++      </div>
+       <!-- [end-chassis-code] -->
+ 
+    </section>
+Index: seed-ui/src/app/views/main/main.component.spec.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/views/main/main.component.spec.ts	(revision 5830289519f2224128069735e8451eb1205cc4e1)
++++ seed-ui/src/app/views/main/main.component.spec.ts	(revision 7f7c8df4c62d72db5545e066b807709d8a85fbfb)
+@@ -80,7 +80,6 @@
+       const tabLinks =  compElement.querySelectorAll(".nav .nav-link");
+       tabLinks[1].click();
+       const helloButtons = compElement.querySelectorAll(".card-block .btn");
+-      const settingsButton = compElement.querySelector(".content-area > .btn-link");
+       expect(helloButtons.length).toEqual(2);
+       expect(helloButtons[0].id).toBe("helloBtn1");
+       expect(helloButtons[1].id).toBe("helloBtn2");
+@@ -89,36 +88,15 @@
+    it("should call echoService.sendEcho for hello button 1", fakeAsync(() => {
+       const helloButtons = compElement.querySelectorAll(".card-block .btn");
+       helloButtons[0].click();
+-      expect(page.echoServiceSpy.calls.any()).toBe(true, "sendEcho called");
++      expect(<any>page.echoServiceSpy.calls.any()).toBe(true, "sendEcho called");
+    }));
+ 
+    it("should call navService.showSettingsView for settingsButton", fakeAsync(() => {
+       const settingsButton = compElement.querySelector(".content-area > .btn-link");
+       settingsButton.click();
+-      expect(page.navServiceSpy.calls.any()).toBe(true, "showSettingsView called");
++      expect(<any>page.navServiceSpy.calls.any()).toBe(true, "showSettingsView called");
+    }));
+ 
+-   // Different implementation of the same tests. Works with Chrome but fails with PhantomJS.
+-/*
+-   it("should display 3 buttons", () => {
+-      expect(page.helloButtons.length).toEqual(2);
+-      expect(page.helloButtons[0].nativeElement.textContent).toBe("mainView.helloBtn1");
+-      expect(page.helloButtons[1].nativeElement.textContent).toBe("mainView.helloBtn2");
+-      expect(page.settingsButton.nativeElement.textContent).toBe("gotoSettings");
+-   });
+-
+-   it("should call echoService.sendEcho for hello button 1", fakeAsync(() => {
+-      page.helloButtons[0].triggerEventHandler("click", null);
+-      tick();
+-      expect(page.echoServiceSpy.calls.any()).toBe(true, "sendEcho called");
+-   }));
+-
+-   it("should call navService.showSettingsView for settingsButton", fakeAsync(() => {
+-      page.settingsButton.triggerEventHandler("click", null);
+-      tick();
+-      expect(page.navServiceSpy.calls.any()).toBe(true, "showSettingsView called");
+-   }));
+-*/
+ });
+ 
+ 
+@@ -140,17 +118,10 @@
+ }
+ 
+ class Page {
+-   helloButtons: DebugElement[];
+-   settingsButton: DebugElement;
+    echoServiceSpy: jasmine.Spy;
+    navServiceSpy: jasmine.Spy;
+ 
+    constructor() {
+-      // Find the 3 buttons on the page with css rules
+-      // ToDo see why this doesn't work with PhantomJS. In the mean time we get buttons another way in tests above.
+-      this.helloButtons  = fixture.debugElement.queryAll(By.css(".btn-primary"));
+-      this.settingsButton  = fixture.debugElement.query(By.css(".btn-link"));
+-
+       // Get the component's injected service and spy on it
+       const echoService = fixture.debugElement.injector.get(EchoService);
+       this.echoServiceSpy = spyOn(echoService, "sendEcho").and.callThrough();
+Index: seed-ui/src/app/views/monitor/monitor.component.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/views/monitor/monitor.component.ts	(revision 3dde06915d1e19b05bba1df22ff330d67278dc29)
++++ seed-ui/src/app/views/monitor/monitor.component.ts	(revision b7ad480e006fa7e311f114bba2c7a2266bf64c79)
+@@ -1,12 +1,12 @@
+-import { Component, OnInit, OnDestroy, ViewChild, ViewChildren, ChangeDetectorRef } from "@angular/core";
++import { Component, OnInit, ViewChild } from "@angular/core";
+ import { Location }     from "@angular/common";
+-import { ActivatedRoute, Params } from "@angular/router";
+-import { Subscription } from "rxjs/Subscription";
++import { ActivatedRoute } from "@angular/router";
++import { Observable } from "rxjs/Observable";
+ 
+ import { APP_CONFIG } from "../../shared/app-config";
+ import { GlobalsService, RefreshService, I18nService,
+-         AppAlertService }   from "../../shared/index";
+-import { Host, HostService, NavService } from "../../services/index";
++AppAlertService }   from "../../shared/index";
++import { Host, HostError, HostService, NavService } from "../../services/index";
+ import { DialogBoxComponent }  from "../../shared/dev/dialog-box.component";
+ import { Action2WizardComponent } from "../modals/action2-wizard.component";
+ 
+@@ -18,11 +18,10 @@
+    styleUrls: ["./monitor.component.scss"],
+    templateUrl: "./monitor.component.html",
+ })
+-export class MonitorComponent implements OnInit, OnDestroy {
+-   host: Host;
++export class MonitorComponent implements OnInit {
++   hostData$: Observable<Host | HostError>;
+    titleKey: string;
+-   private refreshViewSub: Subscription;
+-   instance: MonitorComponent;
++   updateTime: string;
+    // Note: use @ViewChildren in case you have more than one dialogBox.
+    @ViewChild(DialogBoxComponent) dialogBox: DialogBoxComponent;
+    @ViewChild(Action2WizardComponent) action2Wizard: Action2WizardComponent;
+@@ -34,112 +33,78 @@
+                private location: Location,
+                public  nav: NavService,
+                private refreshService: RefreshService,
+-               private route: ActivatedRoute,
+-               private changeDetector: ChangeDetectorRef) {
++               private route: ActivatedRoute) {
+ 
+-      this.instance = this;
++      // hostData$ is an Observable holding the data to be displayed in the view:
++      // (see http://reactivex.io/rxjs/manual/overview.html#observable)
++      // - it starts with refreshObservable$ in order to be triggered when Refresh is clicked
++      //   (and also triggered once initially by the BehaviorSubject in RefreshService),
++      // - then it maps to the route parameters from which the host id can be extracted,
++      // - then it calls getHostProperties() to get the host data (switchMap allows to cancel
++      //    async calls cleanly in case the host id changes before the data comes back,
++      // - finally the .do operator performs some actions that don't affect the stream.
++      //
++      // NOTE: Observables can be declared in the constructor because they are "cold" objects,
++      // i.e. nothing is executed here until someone subscribes to hostData$. This is done
++      // by the "async" pipe in monitor.component.html when the content is rendered.
++      // The async pipe also takes care of unsubscribing when the component is destroyed.
+ 
+-      // Subscribe to refreshService to handle the global refresh action
+-      this.refreshViewSub = refreshService.refreshObservable$.subscribe(
+-            () => this.refreshView());
++      this.hostData$ = this.refreshService.refreshObservable$
++            .switchMap(() => this.route.paramMap)
++            .map(paramMap => paramMap.get('id'))
++            .switchMap(id => this.hostService.getHostProperties(id, APP_CONFIG.hostProperties))
++            .do(hostData => {
++               // .do allows to perform simple actions with no effect on the Observable stream
++               // - updateTime is used to see that Refresh works by displaying the current time
++               // - console.log is a common way to debug observable in a .do operator
++               // - showError will display a message in the top banner in case of error
++               this.updateTime = new Date().toLocaleTimeString();
++               console.log("hostData = " + JSON.stringify(hostData));
++               if (hostData instanceof HostError) {
++                  this.appAlertService.showError((hostData as HostError).error)
++               }
++            });
+    }
+ 
+    ngOnInit(): void {
+-      // Initialize the component's host based on the id parameter
+-      this.route.params.forEach((params: Params) => {
+-         const id = params["id"];
+-         this.getHostData(id);
+-
+-         // Set the view title between monitor and manage
+-         this.titleKey = this.nav.getViewType() + "View";
+-      });
+-
+-      // Set the current view type between monitor and manage
++      // Initialize viewType since the same component is used for Monitor and Configure
+       const viewType = /\/(.*)\//.exec(this.location.path())[1];
+       this.nav.setViewType(viewType);
+-   }
+-
+-   ngOnDestroy(): void {
+-      this.refreshViewSub.unsubscribe();
+-   }
+-
+-   /**
+-    * refreshView is called when clicking the Refresh button (in plugin or dev mode)
+-    * or when toggling the Use Live Data button (dev mode only)
+-    */
+-   private refreshView(): void {
+-      // First we find the current host id at the end of the url
+-      // Then we check if that id still belongs to the hosts list, else revert to first host
+-      const path = this.location.path();
+-      let id = path.substring(path.lastIndexOf("/") + 1);
+-
+-      this.hostService.getHosts()
+-            .then(hosts => {
+-               if (hosts.length === 0) {
+-                  return;
+-               }
+-               const curHost = hosts.find(h => h.id === id);
+-               if (!curHost) {
+-                  id = hosts[0].id;
+-               }
+-               this.getHostData(id, true);
+-            });
++      this.titleKey = viewType + "View";
+    }
+ 
+    /**
+     * Action1 dialog in dev mode
+     * (in plugin mode the Action1 dialog will be opened from the Host menu)
+     */
+-   public openAction1Dialog(): void {
++   public openAction1Dialog(host: Host): void {
+       this.appAlertService.closeAlert();
+ 
+-      const title = "Action1 for " + this.host.name;
+-      this.dialogBox.openActionDialog(this.host, title);
++      const title = "Action1 for " + host.name;
++      this.dialogBox.openActionDialog(host, title);
+    }
+ 
+    /**
+     * Action2 wizard in dev mode
+     * (in plugin mode the Action2 wizard will be opened from the Host menu)
+     */
+-   public openAction2Wizard(): void {
++   public openAction2Wizard(host: Host): void {
+       this.appAlertService.closeAlert();
+ 
+       const title = "Action2 wizard";
+-      this.action2Wizard.openWizard(this.host, title);
++      this.action2Wizard.openWizard(host, title);
+    }
+ 
+    /**
+     * Action3 is headless, so it only logs the call in dev mode
+     */
+-   public callAction3(): void {
++   public callAction3(host: Host): void {
+       this.appAlertService.closeAlert();
+ 
+       // we set actionUid to same value as in plugin.xml
+       const actionUid = APP_CONFIG.packageName + ".sampleAction3";
+       const actionUrl = this.gs.getWebContextPath() + "/rest/actions.html?actionUid=" + actionUid;
+-      this.gs.getWebPlatform().callActionsController(actionUrl, null, this.host.id);
+-   }
+-
+-   /**
+-    *
+-    * @param id
+-    */
+-   private getHostData(id: string, inRefreshView: boolean = false): void {
+-      const useLiveData = this.gs.useLiveData();
+-      this.hostService.getHostProperties(id, APP_CONFIG.hostProperties)
+-            .then(host => {
+-               this.host = host;
+-               if (!useLiveData && host.id !== id) {
+-                  this.host.id = id;
+-               }
+-               if (inRefreshView) {
+-                  // This is necessary to refresh the DOM when coming from a Refresh event
+-                  this.changeDetector.detectChanges();
+-               }
+-            })
+-            .catch(errorMsg => {
+-               this.appAlertService.showError(errorMsg);
+-            });
++      this.gs.getWebPlatform().callActionsController(actionUrl, null, host.id);
+    }
+ 
+    public getStatusIcon(host: Host): string {
+Index: seed-ui/src/app/shared/dev/app-header.component.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/shared/dev/app-header.component.ts	(revision c7b4138fe3e52e41ff259b32bbe8018ee06a1812)
++++ seed-ui/src/app/shared/dev/app-header.component.ts	(revision da8e82abc48bcb783a5b3190439d0178173dc69e)
+@@ -6,7 +6,7 @@
+ import { APP_CONFIG } from "../app-config";
+ import { GlobalsService, RefreshService }   from "../index";
+ import { extensionToRoutes } from "../../app-routing.module";
+-import { Http, Headers } from "@angular/http";
++import { Http, Headers, RequestOptionsArgs } from "@angular/http";
+ import { AppAlertService } from "../app-alert.service";
+ import { I18nService } from "../i18n.service";
+ import { NavService } from "../../services/nav.service";
+@@ -91,12 +91,12 @@
+          this.extensionXml = null;
+       } else {
+          this.appAlertService.closeAlert();
+-         const headers = new Headers({"Content-Type": "text/html"});
++         const options: RequestOptionsArgs = { headers: new Headers({"Content-Type": "text/html"}) };
+ 
+          // Extract the extension definition from plugin.xml, served by json-server
+          const pluginXmlUrl = APP_CONFIG.getMockDataUrl(false) + "/plugin.xml";
+          const re: RegExp = new RegExp('<extension id="' + this.viewExtension + '"[^]*?extension>', "m");
+-         this.http.get(pluginXmlUrl, headers)
++         this.http.get(pluginXmlUrl, options)
+                .toPromise()
+                .then(response => {
+                   const result = re.exec(response.text());
+Index: seed-ui/src/app/shared/dev/clientid.component.html
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/shared/dev/clientid.component.html	(revision 2dc639ad2a43df80b6e20e81b5044271c8a60df2)
++++ seed-ui/src/app/shared/dev/clientid.component.html	(revision 54dbe7531d6d72b67419e1991f0524ee7f3bc06a)
+@@ -1,15 +1,19 @@
+ <clr-modal [(clrModalOpen)]="modalOpened">
+-   <h3 class="modal-title">Client Id Setup</h3>
+-   <div class="modal-body">
+-      <p *ngIf="gs.isPluginMode()">Copy the client id value below, then paste it in the standalone app.</p>
+-      <p *ngIf="!gs.isPluginMode()">Run the plugin in
+-         <a href="{{settingViewUrl}}" target="_blank">vSphere Client</a>
+-         , get the client id and paste its value here:</p>
+-      <input type="text" id="clientId" size="35"
++   <h3 class="modal-title">{{gs.isPluginMode() ? 'Get' : 'Update'}} Client Id for Live Data</h3>
++   <div class="modal-body" *ngIf="gs.isPluginMode(); else DevMode">
++      <p>Copy the id below, and paste it in the Settings view of the standalone app.</p>
++      <input #input type="text" id="clientId" size="35" autofocus
+              [(ngModel)]="clientId" name="clientId" #name="ngModel">
+    </div>
++   <ng-template class="modal-body" #DevMode>
++      <p>Run this plugin in
++         <a href="{{settingViewUrl}}" target="_blank">vSphere Client</a>
++         , open the Settings view, copy the Client Id and paste its value here:</p>
++      <input #input type="text" id="clientId2" size="35" selected="true"
++             [(ngModel)]="clientId" name="clientId2" #name="ngModel">
++   </ng-template>
+    <div class="modal-footer">
+       <button *ngIf="!gs.isPluginMode()" type="button" class="btn" (click)="onCancel()">Cancel</button>
+-      <button type="submit" class="btn btn-primary" (click)="onSubmit()">Ok</button>
++      <button type="submit" class="btn btn-primary" (click)="onSubmit()">{{gs.isPluginMode() ? 'Close' : 'Save'}}</button>
+    </div>
+ </clr-modal>
+\ No newline at end of file
+Index: seed-ui/src/app/services/chassis/chassis.service.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/services/chassis/chassis.service.ts	(revision 414079d68b51ed8a1e94876faed3f7628cecd654)
++++ seed-ui/src/app/services/chassis/chassis.service.ts	(revision 7f7c8df4c62d72db5545e066b807709d8a85fbfb)
+@@ -1,37 +1,36 @@
+ import { Injectable } from "@angular/core";
+ import { Http, Response, ResponseOptions } from "@angular/http";
+-import { GlobalsService, AppAlertService } from "../../shared/index";
++import { GlobalsService } from "../../shared/index";
+ import { APP_CONFIG } from "../../shared/app-config";
+ import { AppErrorHandler } from "../../shared/appErrorHandler";
+ import { WebPlatform }  from "../../shared/vSphereClientSdkTypes";
+-import { Chassis } from "./chassis.model";
++import { Chassis, ChassisError } from "./chassis.model";
+ import { chassisIdConstant, initialChassisCount } from "../testing/fake-chassis";
+ 
+ import "rxjs/add/operator/toPromise";
+-
+-// ChassisServiceBase interface is not really required for ChassisService but
+-// it helps define a simple FakeChassisService for testing purposes
+-export interface ChassisServiceBase {
+-   getChassisList(): Promise<Chassis[]>;
+-   getChassis(objectId: string): Promise<Chassis>;
+-   save(chassis: Chassis): Promise<Response>;
+-   delete(chassis: Chassis): Promise<Response>;
+-}
++import { Observable } from "rxjs/Observable";
+ 
+ // Object type
+ export const chassisType = "samples:Chassis";
+ 
++/**
++ * The result of getChassisList(), containing either an array of chassis or an error
++ */
++export class ChassisList {
++   constructor(public allChassis: Chassis[], public error: string = null) {
++   }
++}
++
+ @Injectable()
+-export class ChassisService implements ChassisServiceBase {
+-   private readonly inMemoryChassisUrl = "app/chassisList";
++export class ChassisService {
++   private readonly inMemoryChassisUrl = "app/fakeChassisList";
+    private readonly webPlatform: WebPlatform;
+    private readonly webContextPath: string;
+    private chassisCount: number = initialChassisCount;
+ 
+    constructor(private http: Http,
+                private errorHandler: AppErrorHandler,
+-               private gs: GlobalsService,
+-               private appAlertService: AppAlertService) {
++               private gs: GlobalsService) {
+       this.webContextPath = this.gs.getWebContextPath();
+       this.webPlatform = this.gs.getWebPlatform();
+    }
+@@ -67,49 +66,56 @@
+     *
+     * @param sorted  true for sorting the list by names
+     */
+-   getChassisList(sorted: boolean = false): Promise<Chassis[]> {
++   getChassisList(sorted: boolean = false): Observable<ChassisList> {
+       const headers = this.gs.getHttpHeaders();
+ 
+       return this.http.get(this.getChassisUrl(), headers)
+-            .toPromise()
+-            .then(response => {
+-               const chassisList = response.json().data as Chassis[];
+-               return chassisList.sort(function(chassis1, chassis2) {
++            .map(response => {
++               const allChassis = response.json().data as Chassis[];
++               allChassis.sort(function(chassis1, chassis2) {
+                      return chassis1.name.localeCompare(chassis2.name);
+                });
++               return new ChassisList(allChassis);
+             })
+-            .catch(error => this.errorHandler.httpPromiseError(error));
+-
++            .catch(error =>
++                  Observable.of(new ChassisList([], this.errorHandler.getHttpError(error))));
+    }
+ 
+    /**
+     * Get a chassis by id
+     */
+-   getChassis(objectId: string): Promise<Chassis> {
++   getChassis(objectId: string): Observable<Chassis | ChassisError> {
+       if (this.gs.useLiveData()) {
+          // Use rest/data/properties/[objectId]?properties=... to get data from the Java service
+          const url = this.buildDataUrl(objectId, APP_CONFIG.chassisProperties);
+          const headers = this.gs.getHttpHeaders();
+ 
+          return this.http.get(url, headers)
+-            .toPromise()
+-            .then(function (response) {
++            .map(function (response) {
+                const chassis = response.json() as Chassis;
+                // Use the original objectId to avoid encoding issues
+                chassis.id = objectId;
+                return chassis;
+             })
+-            .catch(error => this.errorHandler.httpPromiseError(error));
++            .catch(error => {
++               const errorMsg = this.errorHandler.getHttpError(error);
++               return Observable.of(new ChassisError(objectId, errorMsg));
++            });
+       } else {
+          // Standalone mode: find the chassis.id in the in-memory chassisList
+          return this.getChassisList()
+-            .then(chassisList => chassisList.find(chassis => chassis.id === objectId));
++            .map(chassisList => {
++               if (chassisList.error) {
++                  return new ChassisError(objectId, chassisList.error);
++               }
++               return chassisList.allChassis.find(chassis => chassis.id === objectId);
++            });
+       }
+    }
+ 
+    // Create or update a chassis.
+    // Return a failure if the chassis name already exists.
+-   save(chassis: Chassis): Promise<Response> {
++   save(chassis: Chassis): Promise<Response | void> {
+       if (chassis.id) {
+          return this.put(chassis);
+       }
+@@ -140,12 +146,14 @@
+       const newName = chassis.name;
+       const currentId = chassis.id;
+       return this.getChassisList()
+-         .then(chassisList => chassisList.find(
+-            chassis1 => (chassis1.name === newName && currentId !== chassis1.id)));
++            .toPromise()
++            .then(chassisList =>
++               chassisList.allChassis.find(c => (c.name === newName && currentId !== c.id))
++            );
+    }
+ 
+    // Add a new chassis
+-   private post(chassis: Chassis): Promise<Response> {
++   private post(chassis: Chassis): Promise<Response | void> {
+       if (!this.gs.useLiveData()) {
+          // generate a mock id for the new chassis
+          chassis.id = chassisIdConstant + this.chassisCount++;
+@@ -172,7 +180,7 @@
+    }
+ 
+    // Update an existing chassis
+-   private put(chassis: Chassis): Promise<Response> {
++   private put(chassis: Chassis): Promise<Response | void> {
+       const jsonStr = JSON.stringify(chassis);
+       console.log("put Chassis = " + jsonStr);
+ 
+Index: seed-ui/src/app/views/monitor/monitor.component.html
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/views/monitor/monitor.component.html	(revision 3dde06915d1e19b05bba1df22ff330d67278dc29)
++++ seed-ui/src/app/views/monitor/monitor.component.html	(revision 2dc639ad2a43df80b6e20e81b5044271c8a60df2)
+@@ -11,48 +11,60 @@
+       <!-- Left sidenav used as object navigator -->
+       <sidenav></sidenav>
+    </td>
+-   <td *ngIf="host" class="td-subnav">
++   <td class="td-subnav">
+       <!-- Subnav tabs to switch between object views -->
+-      <subnav *ngIf="gs.showDevUI()" [objectId]="host.id" [objectType]="'host'"></subnav>
++      <subnav *ngIf="gs.showDevUI()" [objectType]="'host'"></subnav>
+ 
+ <!-- ---------------------------- Monitor view content -------------------------------- -->
+       <div class="content-container">
+ 
+-         <div class="content-area">
+-            <h3 class="stack-header">
++         <div class="content-area" *ngIf="hostData$ | async as host">
++            <div *ngIf="host.name; else hostError">
++               <h3 class="stack-header">
+                <span class="stack-title"><clr-icon shape="host" size="32"></clr-icon>
+                   {{i18n.translate(titleKey, host.name)}}</span>
+-            </h3>
+-            <clr-stack-view style="width:500px">
+-               <clr-stack-block>
+-                  <clr-stack-label>{{i18n.translate("host.name")}}</clr-stack-label>
+-                  <clr-stack-content>{{host.name}}</clr-stack-content>
+-               </clr-stack-block>
+-               <clr-stack-block>
+-                  <clr-stack-label>{{i18n.translate("host.status")}}</clr-stack-label>
+-                  <clr-stack-content class="color-{{host.status}}">
+-                     <clr-icon [attr.shape]="getStatusIcon(host)" size="24"></clr-icon> {{host.status}}
+-                  </clr-stack-content>
+-               </clr-stack-block>
+-               <clr-stack-block>
+-                  <clr-stack-label>{{i18n.translate("host.model")}}</clr-stack-label>
+-                  <clr-stack-content>{{host.model}}</clr-stack-content>
+-               </clr-stack-block>
+-               <clr-stack-block>
+-                  <clr-stack-label>{{i18n.translate("host.vms")}}</clr-stack-label>
+-                  <clr-stack-content>{{host.vms.length}}</clr-stack-content>
+-               </clr-stack-block>
+-            </clr-stack-view>
+-            <button (click)="nav.showObjectView(host.id, 'host', 'summary')" class="btn btn-link">
+-               {{i18n.translate("gotoSummary")}}</button>
+-            <button (click)="showOtherView(host.id)" class="btn btn-link">
+-               {{i18n.translate(nav.getViewType() === 'monitor' ? "gotoConfigure" : "gotoMonitor")}}</button>
++               </h3>
++               <clr-stack-view style="width:500px">
++                  <clr-stack-block>
++                     <clr-stack-label>{{i18n.translate("host.name")}}</clr-stack-label>
++                     <clr-stack-content>{{host.name}}</clr-stack-content>
++                  </clr-stack-block>
++                  <clr-stack-block>
++                     <clr-stack-label>{{i18n.translate("host.status")}}</clr-stack-label>
++                     <clr-stack-content class="color-{{host.status}}">
++                        <clr-icon [attr.shape]="getStatusIcon(host)" size="24"></clr-icon> {{host.status}}
++                     </clr-stack-content>
++                  </clr-stack-block>
++                  <clr-stack-block>
++                     <clr-stack-label>{{i18n.translate("host.model")}}</clr-stack-label>
++                     <clr-stack-content>{{host.model}}</clr-stack-content>
++                  </clr-stack-block>
++                  <clr-stack-block>
++                     <clr-stack-label>{{i18n.translate("host.vms")}}</clr-stack-label>
++                     <clr-stack-content>{{host.vms.length}}</clr-stack-content>
++                  </clr-stack-block>
++               </clr-stack-view>
++               <button (click)="nav.showObjectView(host.id, 'host', 'summary')" class="btn btn-link">
++                  {{i18n.translate("gotoSummary")}}</button>
++               <button (click)="showOtherView(host.id)" class="btn btn-link">
++                  {{i18n.translate(nav.getViewType() === 'monitor' ? "gotoConfigure" : "gotoMonitor")}}</button>
++               <i>View updated at {{updateTime}}</i>
++            </div>
++            <ng-template #hostError>
++               <h3 class="stack-header">
++                  <span class="stack-title"><clr-icon shape="host" size="32"></clr-icon>
++                     {{i18n.translate(titleKey, host.id)}}
++                  </span>
++               </h3>
++               <p>Error getting Host data!</p>
++               {{host.error}}
++            </ng-template>
+ 
+ <!-- ---------------------------- Dev mode components -------------------------------- -->
+             <div *ngIf="gs.showDevUI()" class="dev-ui">
+-               <a (click)="openAction1Dialog()" class="btn btn-sm">Action1 - dialog</a>
+-               <a (click)="openAction2Wizard()" class="btn btn-sm">Action2 - wizard</a>
+-               <a (click)="callAction3()" class="btn btn-sm">Action3 - headless</a>
++               <a (click)="openAction1Dialog(host)" class="btn btn-sm">Action1 - dialog</a>
++               <a (click)="openAction2Wizard(host)" class="btn btn-sm">Action2 - wizard</a>
++               <a (click)="callAction3(host)" class="btn btn-sm">Action3 - headless</a>
+                <p><clr-icon shape="info" size="24"></clr-icon>
+                   Monitor and Configure views are identical in this example.
+                   Action buttons are visible only in dev mode.</p>
+@@ -67,5 +79,5 @@
+    Modal for host action1 and action2, provided in dev mode because there is no Host menu in the app.
+    In plugin mode the menu actions will open a platform modal containing the same content.
+ -->
+-<dialog-box *ngIf="!gs.isPluginMode() && host !== null"></dialog-box>
+-<action2-wizard *ngIf="!gs.isPluginMode() && host !== null"></action2-wizard>
+\ No newline at end of file
++<dialog-box *ngIf="!gs.isPluginMode()"></dialog-box>
++<action2-wizard *ngIf="!gs.isPluginMode()"></action2-wizard>
+\ No newline at end of file
+Index: seed-ui/src/app/views/summary/summary.component.html
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/views/summary/summary.component.html	(revision 414079d68b51ed8a1e94876faed3f7628cecd654)
++++ seed-ui/src/app/views/summary/summary.component.html	(revision 5830289519f2224128069735e8451eb1205cc4e1)
+@@ -13,7 +13,7 @@
+     </td>
+     <td class="td-subnav">
+       <!-- Subnav tabs to switch between object views -->
+-      <subnav *ngIf="gs.showDevUI()" [objectId]="hostId" [objectType]="'host'"></subnav>
++      <subnav *ngIf="gs.showDevUI()" [objectType]="'host'"></subnav>
+ 
+ <!-- ---------------------------- Summary view content -------------------------------- -->
+       <div class="content-container">
+Index: seed-ui/src/app/services/testing/fake-host.service.ts
+===================================================================
+--- seed-ui/src/app/services/testing/fake-host.service.ts	(revision 5830289519f2224128069735e8451eb1205cc4e1)
++++ seed-ui/src/app/services/testing/fake-host.service.ts	(revision 5830289519f2224128069735e8451eb1205cc4e1)
+@@ -1,12 +0,0 @@
+-import { Host, HostServiceBase } from "../index";
+-
+-export const fakeHostData: Host[] = [ ];
+-
+-export class FakeHostService implements HostServiceBase {
+-   getHosts(): Promise<Host[]> {
+-      return Promise.resolve<Host[]>(fakeHostData);
+-   }
+-   getHostProperties(id, properties): Promise<Host> {
+-      return Promise.resolve<Host>(fakeHostData[0]);
+-   }
+-}
+Index: seed-ui/src/app/views/modals/edit-chassis.component.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/views/modals/edit-chassis.component.ts	(revision 414079d68b51ed8a1e94876faed3f7628cecd654)
++++ seed-ui/src/app/views/modals/edit-chassis.component.ts	(revision 386b4700411670cde8c643aad709ea68430ae21b)
+@@ -30,8 +30,11 @@
+ 
+       // in dev mode the chassis data is passed down from the dialog container
+       if (!gs.isPluginMode()) {
+-         this.currentChassis = this.injector.get('context');
+-         this.chassis = new Chassis(this.currentChassis);
++         const context = this.injector.get('context');
++         if (context) {
++            this.currentChassis = new Chassis(context.id, context.name, context.dimensions, context.serverType);
++         }
++         this.chassis = this.currentChassis ? this.currentChassis.clone() : Chassis.create();
+       }
+ 
+       // css adjustment
+@@ -50,8 +53,7 @@
+          // Nothing to save
+          return;
+       }
+-      const infoMsg = this.currentChassis ? this.chassis.name + " was updated" :
+-                                          this.chassis.name + " was created";
++      const infoMsg = "Chassis " + this.chassis.name + (this.currentChassis ? " was updated" : " was created");
+       this.chassisService.save(this.chassis)
+             .then(() => {
+                // This part is only useful in dev mode because in plugin mode the edit chassis modal dialog
+@@ -80,11 +82,12 @@
+ 
+             if (chassisId === "undefined") {
+                // Case of chassis creation
+-               this.chassis = new Chassis(null);
++               this.chassis = Chassis.create();
+             } else {
+                this.chassisService.getChassis(chassisId)
+-                     .then(chassis => {
+-                        this.chassis = new Chassis(chassis);
++                     .toPromise()
++                     .then((chassis: Chassis) => {
++                        this.chassis = chassis;
+                         this.currentChassis = this.chassis.clone();
+                      });
+             }
+Index: seed-ui/src/app/services/chassis/chassis.model.spec.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/services/chassis/chassis.model.spec.ts	(revision 5830289519f2224128069735e8451eb1205cc4e1)
++++ seed-ui/src/app/services/chassis/chassis.model.spec.ts	(revision 7f7c8df4c62d72db5545e066b807709d8a85fbfb)
+@@ -1,17 +1,17 @@
+ import { Chassis } from "./chassis.model";
+-import { fakeChassisData }   from "../testing/fake-chassis.service";
++import { fakeChassisList } from "../testing/fake-chassis";
+ 
+ 
+ // ----------- Testing vars ------------
+ 
+-const chassis0 = fakeChassisData[0];
++const chassis0: Chassis = fakeChassisList[0];
+ 
+ 
+ // ----------- Tests ------------
+ 
+ describe("Chassis", () => {
+    it("has id, name, dimensions, serverType", () => {
+-      const chassis = new Chassis(chassis0);
++      const chassis = new Chassis(chassis0.id, chassis0.name, chassis0.dimensions, chassis0.serverType);
+       expect(chassis.id).toBe(chassis0.id);
+       expect(chassis.name).toBe(chassis0.name);
+       expect(chassis.dimensions).toBe(chassis0.dimensions);
+@@ -19,15 +19,14 @@
+    });
+ 
+    it("can clone itself", () => {
+-      const chassis = new Chassis(chassis0);
+-      const clone = chassis.clone();
+-      expect(chassis).toEqual(clone);
++      const chassis = chassis0.clone();
++      expect(<any>chassis0).toEqual(chassis);
+    });
+ 
+    it("equals another chassis with same properties", () => {
+-      const chassis1 = new Chassis(chassis0);
++      const chassis1 = chassis0.clone();
+       chassis1.id = "id1";
+-      const chassis2 = new Chassis(chassis0);
++      const chassis2 = chassis0.clone();
+       chassis2.id = "id2";
+       expect(chassis1.equals(chassis2)).toBeTruthy();
+    });
+Index: seed-ui/src/app/views/settings/settings.component.html
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/views/settings/settings.component.html	(revision 2dc639ad2a43df80b6e20e81b5044271c8a60df2)
++++ seed-ui/src/app/views/settings/settings.component.html	(revision 54dbe7531d6d72b67419e1991f0524ee7f3bc06a)
+@@ -9,20 +9,24 @@
+     <div class="content-area">
+       <p style="padding-bottom: 10px">{{i18n.translate("settingsView.content")}}</p>
+       <div class="card-columns card-columns-2">
++        <!-- This Live Data setup UI is only visible in dev or localhost mode -->
+         <div *ngIf="gs.isLocalhostDevMode()" class="card clickable">
+           <div class="card-header">
+             Live Data Setup
+           </div>
+           <div class="card-block">
+-            Get or set a vSphere Client session id for Live data:<br/>
+-            <a (click)="clientidComponent.show()" class="btn">{{ gs.isPluginMode() ? "Get":"Set" }} Client Id</a>
++            <span *ngIf="gs.isPluginMode(); else DevMode">Use this to enable Live Data in the standalone plugin app.</span>
++            <ng-template #DevMode>Current client session id = {{gs.getClientId()}}</ng-template>
++            <p></p><a (click)="clientidComponent.show()" class="btn">
++               {{ gs.isPluginMode() ? "Get":"Set" }} Client Id</a>
+           </div>
+           <div class="card-block">
+             Turn Mock data on/off in plugin mode:<br/>
+-            <span *ngIf="!gs.useLiveData()" style="color:red">
++            <span *ngIf="!gs.useLiveData() && gs.isPluginMode()" style="color:red">
+               This requires http-proxy-servlet-plugin, see documentation!</span><br/>
+             <div class="toggle-switch">
+-              <input type="checkbox" id="mockData" (click)="gs.toggleLiveData()" [checked]="!gs.useLiveData()">
++              <input type="checkbox" id="mockData" (click)="gs.toggleLiveData()"
++                     [checked]="!gs.useLiveData()" [disabled]="!gs.isPluginMode()">
+               <label for="mockData">Mock data</label>
+             </div>
+           </div>
+Index: seed-ui/src/app/views/modals/action2-wizard.component.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/views/modals/action2-wizard.component.ts	(revision 414079d68b51ed8a1e94876faed3f7628cecd654)
++++ seed-ui/src/app/views/modals/action2-wizard.component.ts	(revision 5830289519f2224128069735e8451eb1205cc4e1)
+@@ -43,7 +43,6 @@
+ 
+    ngOnInit(): void {
+       if (this.gs.isPluginMode()) {
+-         // this.opened = true;
+          // Get host objectId and actionUid from query parameters:
+          // - actionUid could also be hard-coded if this modal is only used for 1 action
+          // - retrieve host name in order to change the dialog title
+Index: seed-ui/src/app/services/chassis/chassis.service.spec.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/services/chassis/chassis.service.spec.ts	(revision 5830289519f2224128069735e8451eb1205cc4e1)
++++ seed-ui/src/app/services/chassis/chassis.service.spec.ts	(revision b7ad480e006fa7e311f114bba2c7a2266bf64c79)
+@@ -9,7 +9,7 @@
+ 
+ // Internal imports
+ import { Chassis, ChassisService, chassisType }     from "./index";
+-import { fakeChassisData }   from "../testing/fake-chassis.service";
++import { fakeChassisList }   from "../testing/fake-chassis";
+ import { Globals, GlobalsService, APP_CONFIG, AppAlertService } from "../../shared/index";
+ import { AppErrorHandler } from "../../shared/appErrorHandler";
+ import { globalStub, appErrorHandlerStub } from "../../testing/index";
+@@ -78,7 +78,7 @@
+       });
+ 
+       it ("makes the right http call for getChassis", ()  => {
+-         const chassis: Chassis = fakeChassisData[0];
++         const chassis: Chassis = fakeChassisList[0];
+ 
+          chassisService.getChassis(chassis.id);
+ 
+@@ -89,7 +89,7 @@
+ 
+       it ("makes the right http call to update a chassis", ()  => {
+          const spy = spyOn(globalsService.getWebPlatform(), "callActionsController");
+-         const chassis: Chassis = fakeChassisData[0];
++         const chassis: Chassis = fakeChassisList[0];
+          const jsonStr = JSON.stringify(chassis);
+ 
+          chassisService.save(chassis);
+@@ -102,9 +102,7 @@
+ 
+       it ("makes the right http call to create a chassis", ()  => {
+          const spy = spyOn(globalsService.getWebPlatform(), "callActionsController");
+-         const newChassis: Chassis = new Chassis();
+-         newChassis.name = "new name";
+-         newChassis.dimensions = "new dimensions";
++         const newChassis: Chassis = Chassis.create();
+ 
+          const newChassisStr: string = JSON.stringify(newChassis);
+ 
+@@ -123,7 +121,7 @@
+          spyOn(globalsService, "useLiveData").and.returnValue(false);
+ 
+          // Create an Observable returning the fakeChassisData
+-         resp = new Response(new ResponseOptions({status: 200, body: {data: fakeChassisData }}));
++         resp = new Response(new ResponseOptions({status: 200, body: {data: fakeChassisList }}));
+          obs =  Observable.create(function(observer) {
+             observer.onNext(resp);
+             observer.onCompleted();
+@@ -136,7 +134,7 @@
+          chassisService.getChassisList();
+ 
+          const httpArgs = spy.calls.first().args;
+-         expect(httpArgs[0]).toBe("app/chassisList");
++         expect(httpArgs[0]).toBe("app/fakeChassisList");
+       });
+ 
+       // Asynchronous tests => use async
+@@ -145,26 +143,26 @@
+          backend.connections.subscribe((c: MockConnection) => c.mockRespond(resp));
+ 
+          chassisService.getChassisList()
+-            .then(chassisList => {
+-               expect(chassisList.length).toEqual(fakeChassisData.length);
+-               expect(chassisList[0]).toEqual(fakeChassisData[0]);
++            .subscribe(chassisList => {
++               expect(<any>chassisList.allChassis.length).toEqual(fakeChassisList.length);
++               expect(<any>chassisList.allChassis[0]).toEqual(fakeChassisList[0]);
+             });
+       }));
+ 
+       it ("finds the right chassis with getChassis",  async(()  => {
+          backend.connections.subscribe((c: MockConnection) => c.mockRespond(resp));
+-         const chassis1: Chassis = fakeChassisData[1];
++         const chassis1: Chassis = fakeChassisList[1];
+ 
+          chassisService.getChassis(chassis1.id)
+-            .then(chassis => {
+-               expect(chassis).toEqual(fakeChassisData[1]);
++            .map(chassis => {
++               expect(chassis).toEqual(fakeChassisList[1]);
+             });
+       }));
+ 
+       it ("updates an existing chassis with save" ,  async(()  => {
+          // Modify a chassis and check that http.put is called with correct data
+-         const chassis0: Chassis = fakeChassisData[0];
+-         const oldChassis0: Chassis = new Chassis(chassis0);
++         const chassis0: Chassis = fakeChassisList[0];
++         const oldChassis0: Chassis = chassis0.clone();
+          chassis0.name = "new name";
+          chassis0.dimensions = "new dimensions";
+ 
+@@ -183,17 +181,17 @@
+          });
+ 
+          chassisService.save(chassis0)
+-            .then(resp0 => {
++            .then((resp0: any) => {
+                expect(resp0.status).toEqual(200);
+                // reset chassis0 original values for other tests
+-               fakeChassisData[0] = oldChassis0;
++               fakeChassisList[0] = oldChassis0;
+             });
+       }));
+ 
+       it ("returns an error when chassis name already exists" ,  async(()  => {
+          backend.connections.subscribe((c: MockConnection) => c.mockRespond(resp));
+-         const chassis0: Chassis = fakeChassisData[0];
+-         const existingName = fakeChassisData[1].name;
++         const chassis0: Chassis = fakeChassisList[0];
++         const existingName = fakeChassisList[1].name;
+          chassis0.name = existingName;
+ 
+          chassisService.save(chassis0)
+@@ -206,9 +204,7 @@
+       }));
+ 
+       it ("creates a new chassis with save" ,  async(()  => {
+-         const newChassis: Chassis = new Chassis();
+-         newChassis.name = "new name2";
+-         newChassis.dimensions = "new dimensions";
++         const newChassis: Chassis = Chassis.create();
+ 
+          const newChassisStr: string = JSON.stringify(newChassis);
+          const saveResponse = new Response(new ResponseOptions({status: 200, body: {data: newChassisStr }}));
+@@ -225,7 +221,7 @@
+ 
+          chassisService.save(newChassis)
+             .then(res => {
+-               expect(resp.status).toEqual(200);
++               expect(<any>resp.status).toEqual(200);
+                // Note that we can't check if newChassis was created by
+                // InMemoryDataService here, because it is not under test
+             });
+@@ -233,8 +229,8 @@
+       }));
+ 
+       it ("deletes an existing chassis" ,  async(()  => {
+-         const chassis0: Chassis = fakeChassisData[0];
+-         const deleteUrl = "app/chassisList/" + `${chassis0.id}`;
++         const chassis0: Chassis = fakeChassisList[0];
++         const deleteUrl = "app/fakeChassisList/" + `${chassis0.id}`;
+          const delResponse = new Response(new ResponseOptions({status: 200 }));
+ 
+          backend.connections.subscribe((c: MockConnection) => {
+@@ -249,7 +245,7 @@
+ 
+          chassisService.delete(chassis0)
+             .then(response => {
+-               expect(response.status).toEqual(200);
++               expect(<any>response.status).toEqual(200);
+             });
+       }));
+    });
+Index: seed-ui/src/app/services/testing/fake-chassis.service.ts
+===================================================================
+--- seed-ui/src/app/services/testing/fake-chassis.service.ts	(revision 5830289519f2224128069735e8451eb1205cc4e1)
++++ seed-ui/src/app/services/testing/fake-chassis.service.ts	(revision 5830289519f2224128069735e8451eb1205cc4e1)
+@@ -1,34 +0,0 @@
+-import { Chassis, ChassisServiceBase } from "../chassis/index";
+-import { chassisList }       from "./fake-chassis";
+-
+-// [removable-chassis-code]
+-
+-// Export fakeChassisData to use it inside tests
+-export const fakeChassisData: Chassis[] = chassisList.map(item => {
+-   const chassis = new Chassis();
+-   chassis.id = item.id;
+-   chassis.name = item.name;
+-   chassis.dimensions = item.dimensions;
+-   chassis.serverType = item.serverType;
+-   return chassis;
+-});
+-
+-export class FakeChassisService implements ChassisServiceBase {
+-
+-   getChassisList(): Promise<Chassis[]> {
+-      return Promise.resolve<Chassis[]>(fakeChassisData);
+-   }
+-
+-   getChassis(objectId: string): Promise<Chassis> {
+-      const chassis = fakeChassisData.find(elt => elt.id === objectId);
+-      return Promise.resolve<Chassis>(chassis);
+-   }
+-
+-   save(chassis: Chassis): Promise<any> {
+-      return null;
+-   }
+-
+-   delete(chassis: Chassis): Promise<any> {
+-      return null;
+-   }
+-}
+Index: seed-ui/src/webapp/locales/__bundleName___en_US.properties
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/webapp/locales/__bundleName___en_US.properties	(revision 27f77a84115f56bdcddf8fef9d42373e1c82ab73)
++++ seed-ui/src/webapp/locales/__bundleName___en_US.properties	(revision 3dde06915d1e19b05bba1df22ff330d67278dc29)
+@@ -91,4 +91,4 @@
+ addIcon = Embed("../../assets/images/addIcon.png")
+ editIcon = Embed("../../assets/images/editIcon.png")
+ removeIcon = Embed("../../assets/images/removeIcon.png")
+-pluginIcon = Embed("../../webapp/assets/images/plugin.png")
++pluginIcon = Embed("../../assets/images/pluginIcon.png")
+Index: seed-ui/src/webapp/locales/__bundleName___fr_FR.properties
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/webapp/locales/__bundleName___fr_FR.properties	(revision 27f77a84115f56bdcddf8fef9d42373e1c82ab73)
++++ seed-ui/src/webapp/locales/__bundleName___fr_FR.properties	(revision 3dde06915d1e19b05bba1df22ff330d67278dc29)
+@@ -92,4 +92,4 @@
+ addIcon = Embed("../../assets/images/addIcon.png")
+ editIcon = Embed("../../assets/images/editIcon.png")
+ removeIcon = Embed("../../assets/images/removeIcon.png")
+-pluginIcon = Embed("../../webapp/assets/images/plugin.png")
++pluginIcon = Embed("../../assets/images/pluginIcon.png")
+Index: seed-ui/src/app/services/chassis/in-memory-data.service.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/services/chassis/in-memory-data.service.ts	(revision 5830289519f2224128069735e8451eb1205cc4e1)
++++ seed-ui/src/app/services/chassis/in-memory-data.service.ts	(revision 7f7c8df4c62d72db5545e066b807709d8a85fbfb)
+@@ -1,8 +1,8 @@
+ import { InMemoryDbService } from "angular-in-memory-web-api";
+-import { chassisList }       from "../testing/fake-chassis";
++import { fakeChassisList }       from "../testing/fake-chassis";
+ 
+ export class InMemoryDataService implements InMemoryDbService {
+    createDb() {
+-      return { chassisList };
++      return { fakeChassisList };
+    }
+ }
+Index: seed-ui/src/app/views/chassis-summary/chassis-summary.component.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/views/chassis-summary/chassis-summary.component.ts	(revision 414079d68b51ed8a1e94876faed3f7628cecd654)
++++ seed-ui/src/app/views/chassis-summary/chassis-summary.component.ts	(revision 5830289519f2224128069735e8451eb1205cc4e1)
+@@ -1,9 +1,9 @@
+-import { Component, Input, OnInit, OnDestroy, ViewChild, ChangeDetectorRef } from "@angular/core";
++import { Component, Input, OnInit, ViewChild } from "@angular/core";
+ import { ActivatedRoute, Params } from "@angular/router";
+-import { Subscription } from "rxjs/Subscription";
++import { Observable } from "rxjs/Observable";
+ 
+ import { AppAlertService, GlobalsService, RefreshService }   from "../../shared/index";
+-import { Chassis, ChassisService }  from "../../services/chassis/index";
++import { Chassis, ChassisService, ChassisError }  from "../../services/chassis/index";
+ import { NavService } from "../../services/nav.service";
+ import { I18nService } from "../../shared/i18n.service";
+ import { DialogBoxComponent } from "../../shared/dev/dialog-box.component";
+@@ -12,77 +12,47 @@
+    styleUrls: ["./chassis-summary.component.scss"],
+    templateUrl: "./chassis-summary.component.html",
+ })
+-export class ChassisSummaryComponent implements OnInit, OnDestroy {
++export class ChassisSummaryComponent implements OnInit {
+    // Chassis object displayed in this view
+-   chassis: Chassis;
++   chassisData$: Observable<Chassis | ChassisError>;
+ 
+-   // mock variables no related to chassis data in this sample
+    @Input() level1: number;
+    @Input() level2: number;
+ 
+    // Note: use @ViewChildren in case you have more than one dialogBox.
+    @ViewChild(DialogBoxComponent) dialogBox: DialogBoxComponent;
+ 
+-   private subscription: Subscription;
+-
+    constructor(public gs: GlobalsService,
+                public nav: NavService,
+                private appAlertService: AppAlertService,
+                private chassisService: ChassisService,
+                public  i18n: I18nService,
+                private refreshService: RefreshService,
+-               private route: ActivatedRoute,
+-               private changeDetector: ChangeDetectorRef) {
+-      this.subscription = refreshService.refreshObservable$.subscribe(
+-            () => this.getChassisAndUpdateView(null, true));
++               private route: ActivatedRoute) {
++
++      this.chassisData$ = this.refreshService.refreshObservable$
++            .switchMap(() => this.route.paramMap)
++            .map(paramMap => paramMap.get('id'))
++            .switchMap(id => this.chassisService.getChassis(id))
++            .do(() => {
++               // Mock health and compliance levels
++               this.level1 = Math.round(Math.random() * 100);
++               this.level2 = Math.round(Math.random() * 100);
++            })
+    }
+ 
+-
+-   editChassis(): void {
+-      const title = this.i18n.translate("edit.chassis", this.chassis.name);
++   editChassis(chassis: Chassis): void {
++      const title = this.i18n.translate("edit.chassis", chassis.name);
+ 
+       if (this.gs.isPluginMode()) {
+          const url = this.gs.getWebContextPath() +
+                "/index.html?view=edit-chassis&actionUid=__packageName__.editChassis";
+-         this.gs.getWebPlatform().openModalDialog(title, url,  576, 248, this.chassis.id);
++         this.gs.getWebPlatform().openModalDialog(title, url,  576, 248, chassis.id);
+       } else {
+-         this.dialogBox.openEditChassis(this.chassis, title);
++         this.dialogBox.openEditChassis(chassis, title);
+       }
+    }
+ 
+    ngOnInit(): void {
+-      // Initialize the component"s chassis based on the id parameter
+-      this.route.params.forEach((params: Params) => {
+-         const id = params["id"];
+-         const locale = params["locale"];
+-         this.getChassisAndUpdateView(id);
+-      });
+-   }
+-
+-   ngOnDestroy(): void {
+-      this.subscription.unsubscribe();
+-   }
+-
+-   private getChassisAndUpdateView(id: string = null, inRefreshView: boolean = false): void {
+-      if (!id) {
+-         id = this.chassis.id;
+-      }
+-      this.chassisService.getChassis(id)
+-         .then(chassis => {
+-            this.chassis = chassis;
+-            this.updateView(inRefreshView);
+-         })
+-         .catch(errorMsg => this.appAlertService.showError(errorMsg));
+-   }
+-
+-   private updateView(inRefreshView: boolean = false): void {
+-       // Mock health and compliance levels
+-      this.level1 = Math.round(Math.random() * 100);
+-      this.level2 = Math.round(Math.random() * 100);
+-
+-      if (inRefreshView) {
+-         // This is necessary to refresh the DOM when coming from a Refresh event
+-         this.changeDetector.detectChanges();
+-      }
+    }
+ }
+Index: seed-ui/src/app/views/chassis-summary/chassis-summary.component.html
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/views/chassis-summary/chassis-summary.component.html	(revision 414079d68b51ed8a1e94876faed3f7628cecd654)
++++ seed-ui/src/app/views/chassis-summary/chassis-summary.component.html	(revision 5830289519f2224128069735e8451eb1205cc4e1)
+@@ -11,9 +11,9 @@
+       <td *ngIf="gs.showSidenav()" class="td-sidenav">
+          <sidenav></sidenav>
+       </td>
+-      <td *ngIf="chassis"  class="td-subnav">
++      <td *ngIf="chassisData$ | async as chassis"  class="td-subnav">
+          <!-- Subnav tabs to switch between object views -->
+-         <subnav *ngIf="gs.showDevUI()" [objectId]="chassis.id" [objectType]="'chassis'"></subnav>
++         <subnav *ngIf="gs.showDevUI()" [objectType]="'chassis'"></subnav>
+ 
+ <!-- ---------------------------- Summary view content -------------------------------- -->
+          <div class="content-container">
+@@ -57,7 +57,7 @@
+                      <p class="card-text">{{i18n.translate("summary.name", chassis.name)}}</p>
+                      <p class="card-text">{{i18n.translate("summary.dimensions", chassis.dimensions)}}</p>
+                      <p class="card-text">{{i18n.translate("summary.serverType", chassis.serverType)}}</p>
+-                     <a (click)="editChassis()" class="btn btn-primary">
++                     <a (click)="editChassis(chassis)" class="btn btn-primary">
+                         {{i18n.translate("menu.edit")}}</a>
+                   </div>
+                </div>
+Index: seed-ui/src/app/views/chassis-summary/chassis-summary.component.spec.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- seed-ui/src/app/views/chassis-summary/chassis-summary.component.spec.ts	(revision 5830289519f2224128069735e8451eb1205cc4e1)
++++ seed-ui/src/app/views/chassis-summary/chassis-summary.component.spec.ts	(revision 7f7c8df4c62d72db5545e066b807709d8a85fbfb)
+@@ -7,7 +7,7 @@
+ 
+ // Internal imports
+ import { Chassis, ChassisService }  from "../../services/chassis/index";
+-import { FakeChassisService, fakeChassisData }   from "../../services/testing/fake-chassis.service";
++import { fakeChassisList }   from "../../services/testing/fake-chassis";
+ import { ChassisSummaryComponent } from "./chassis-summary.component";
+ import { GlobalsService, RefreshService } from "../../shared/index";
+ import { ActivatedRouteStub } from "../../testing/index";
+@@ -41,7 +41,7 @@
+ xdescribe("ChassisSummaryComponent", () => {
+ 
+    beforeEach(() => {
+-      chassis0 = fakeChassisData[0];
++      chassis0 = fakeChassisList[0];
+       // Make summary page use first chassis
+       activatedRoute = new ActivatedRouteStub();
+       activatedRoute.testParams = { id: chassis0.id };
+@@ -58,7 +58,7 @@
+          ],
+          providers:    [ GlobalsService, RefreshService,
+             { provide: ActivatedRoute, useValue: activatedRoute },
+-            { provide: ChassisService, useClass: FakeChassisService }
++            // { provide: ChassisService, useClass: FakeChassisService }
+          ],
+          schemas: [ NO_ERRORS_SCHEMA ]
+       }).compileComponents()
+diff --git seed-ui/src/assets/images/plugin.png seed-ui/src/assets/images/pluginIcon.png
+index 9bc9c649e0eb0a090bff94b047e7662279bf1af9..9bc9c649e0eb0a090bff94b047e7662279bf1af9
+GIT binary patch
+literal 1318
+zc$@(y1=;$EP)<h;3K|Lk000e1NJLTq001BW001Be1^@s6b9#F800001b5ch_0Itp)
+z=>Px(;7LS5R9FesSAA$zWf*_X$Gw|(yT#mR$@0B<^$$l9Eus*#6@}?AXc$y5A~CW#
+zrNJO;a<@iWGpt#GWb{E2K^q0RsY`4sB*esskXW0X*&o|*Q`f%k?mZv<o^$WH+wML4
+zv>83{-1j}t`+WS~=Y5~&oJ+JYdK&6Kfk(k(;IrVz!MBADB8oKw*Df`JvUuPK#u`o2
+zEN09@U;}J|p9C)%wZk(9eBBA|jF8pE*M7vfV3Oh%IT%;YV$ElrfuOD`LI{=*gG+eg
+zLOqZTxX4L`umao&R@@X8AoD}FV+MUbrd{A8$?FmX*TGrfi^+@0&&WV=vW%aRfw^qi
+zj^kvr{#0TBe6}=GdZ#Kcb{;<>Hs^TLNS^kzL=Tdb5;qa)wg5;(bD8{q0OU4_odwOJ
+zGp|{E?XnRPt)s`p$?-o$>j>ZWdDEPiFuN(ZQIYhw6qz<!xUMR4HlfpiD$$|dGHt(T
+zqiQn7t4UGv$V9bCP%!lKs%3?`wq%}RB!NJHEH-wzgb4t=3ev%65$2$#b)C#_5}(4X
+zTvf=6pf&*r;Z9jsd(+2GUs=`r<?5XU9fc)6Qvo!CJ2go4GKeS?ztW!ay%Z24R%-JA
+zVB1&Y{Z>^%!?}L)Pejq^fkFmUFWT0%Ay4#D=ba;0`!X_AGQE<e>wo0lKk`FSxwk9-
+z0iR*vwO{}(-+VQVC>rjg6GsZ@_{X+y{KPj&{Bk=5tpsr=yc@jZW&_ovDJ1FqiUE1B
+zVwe<(8uAz4x8GF|j(D~zvPA~c%D~bsoyINs!n=<)wq40y`vR#-kaT2&(=Nl9$5)GD
+z&Zhs?P6d!y8azPbX)63e!e<WqUneBBYN)KsKGRd%H@t${-V0zWBZk#)N%a1vqvzgn
+z9Eg_Tw{aI<gQd?7Zc#)l_2XP(gvL~l*_&X-pGrdw^tU3Bp8+iM;L9UId#^vM9Z1$Z
+z^YVs0k9~5E-y<m`T8Dol*|UxeoM93GRtAWD80xXVxe3R~$CE-c1-BI~a^0Nc1g)R5
+zK&}9y24UZmgiOS1U{c02vFF1b(<RfMIDs)j)i~4SF&V%LD1=aQxV|w07((f7TizU8
+z@5n^O;q9XGa5q`<QL(G>FH!lyZfA{0abm0nRS+c86}PR5BdFmCrzr*9z<zvv0K(KN
+zFijf2p)dPv-On!;4jTTgBm<e#c-Vz$oTrCNk5kTya#B4-lT{GA#oFdfJ23wscrAuE
+zz}{p4VF)j@S5jZ`J@f=FU``mDu&W80X=s0!hL%TayVsAlTw9$<vgIK&s#8|}D6J{>
+zP=WB-^^YE8j~?tI5+0<}pJ&r|hu}Je8WI59z6a3vkD&=Y?^Q^4I-xhVA@ke*V7R(x
+zbAR8xC3#f1DxDM*B{v`@?u4d}v`F80O`|?qao^=BX|^{Bt@psKvjSjWSxv!B9$620
+zBzlBha$kt(bkk>1W6w4%B--?Sq)${K?OFDbaN{xbUlc>H>n^>cg?$79^LQ7yWq^$x
+z%4rf+2)-K`xoAk<(BLzjzdLJdT87s~6uFKh<ss6eA8A|s+-4K>uK-ARTf}5G0Lf*z
+z2=}*U@}C3XOUUm$9v{55z07LefmJR9*9~8eFS5c?a^lh=PJ;NK(Q{y~N&a)PRCEK5
+ctK6Lb1K-8wT`?W?N&o-=07*qoM6N<$f+0?I@c;k-
+
